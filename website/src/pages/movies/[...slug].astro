@@ -1,0 +1,294 @@
+---
+import { getCollection } from 'astro:content';
+import type { CollectionEntry } from 'astro:content';
+import BaseLayout from '../../layouts/BaseLayout.astro';
+
+export async function getStaticPaths() {
+  const movies = await getCollection('movies');
+  return movies.map((movie) => ({
+    params: { slug: movie.slug },
+    props: { movie },
+  }));
+}
+
+interface Props {
+  movie: CollectionEntry<'movies'>;
+}
+
+const { movie } = Astro.props;
+const { Content } = await movie.render();
+
+// Format file size
+const formatSize = (bytes: number) => {
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(2)} GB`;
+};
+
+// Format date
+const formatDate = (date: Date) => {
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  }).format(date);
+};
+---
+
+<BaseLayout
+  title={`${movie.data.title} (${movie.data.releaseYear}) - FilmScanner`}
+  description={movie.data.description}
+>
+  <article class="movie-detail">
+    {movie.data.backdropImage && (
+      <div class="backdrop">
+        <img src={movie.data.backdropImage} alt={movie.data.title} />
+        <div class="backdrop-overlay"></div>
+      </div>
+    )}
+
+    <div class="movie-header">
+      <div class="movie-poster">
+        <img src={movie.data.coverImage} alt={`${movie.data.title} poster`} />
+      </div>
+
+      <div class="movie-info">
+        <h1>{movie.data.title}</h1>
+        <div class="movie-meta">
+          <span class="year">{movie.data.releaseYear}</span>
+          <span class="separator">•</span>
+          <span class="runtime">{movie.data.runtime} min</span>
+          <span class="separator">•</span>
+          <span class="rating">⭐ {movie.data.rating.toFixed(1)}/10</span>
+        </div>
+
+        <div class="genres">
+          {movie.data.genres.map((genre) => (
+            <span class="genre-badge">{genre}</span>
+          ))}
+        </div>
+
+        {movie.data.description && (
+          <div class="description">
+            <p>{movie.data.description}</p>
+          </div>
+        )}
+
+        <div class="details-grid">
+          {movie.data.director && (
+            <div class="detail-item">
+              <strong>Director:</strong>
+              <span>{movie.data.director}</span>
+            </div>
+          )}
+
+          {movie.data.cast.length > 0 && (
+            <div class="detail-item">
+              <strong>Cast:</strong>
+              <span>{movie.data.cast.join(', ')}</span>
+            </div>
+          )}
+
+          <div class="detail-item">
+            <strong>Release Date:</strong>
+            <span>{movie.data.releaseDate}</span>
+          </div>
+
+          <div class="detail-item">
+            <strong>File Size:</strong>
+            <span>{formatSize(movie.data.fileSize)}</span>
+          </div>
+
+          <div class="detail-item">
+            <strong>Last Scanned:</strong>
+            <span>{formatDate(movie.data.scannedAt)}</span>
+          </div>
+        </div>
+
+        <div class="links">
+          {movie.data.tmdbId && (
+            <a
+              href={`https://www.themoviedb.org/movie/${movie.data.tmdbId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="external-link"
+            >
+              View on TMDB
+            </a>
+          )}
+          {movie.data.imdbId && (
+            <a
+              href={`https://www.imdb.com/title/${movie.data.imdbId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="external-link"
+            >
+              View on IMDb
+            </a>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <div class="movie-content">
+      <Content />
+    </div>
+
+    <div class="back-link">
+      <a href="/">← Back to Collection</a>
+    </div>
+  </article>
+</BaseLayout>
+
+<style>
+  .movie-detail {
+    position: relative;
+  }
+
+  .backdrop {
+    position: relative;
+    width: 100%;
+    height: 400px;
+    margin: -2rem -2rem 2rem -2rem;
+    overflow: hidden;
+  }
+
+  .backdrop img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .backdrop-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    background: linear-gradient(to top, var(--bg-color) 0%, transparent 100%);
+  }
+
+  .movie-header {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+  }
+
+  .movie-poster img {
+    width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .movie-info h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .movie-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+  }
+
+  .rating {
+    color: var(--accent-color);
+    font-weight: 600;
+  }
+
+  .genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .genre-badge {
+    padding: 0.25rem 0.75rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    font-size: 0.875rem;
+    color: var(--text-muted);
+  }
+
+  .description {
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+    font-size: 1.1rem;
+  }
+
+  .details-grid {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .detail-item {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .detail-item strong {
+    color: var(--text-muted);
+    min-width: 120px;
+  }
+
+  .links {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  .external-link {
+    padding: 0.5rem 1rem;
+    background: var(--accent-color);
+    color: var(--bg-color);
+    text-decoration: none;
+    border-radius: 4px;
+    font-weight: 600;
+    transition: opacity 0.2s;
+  }
+
+  .external-link:hover {
+    opacity: 0.9;
+  }
+
+  .movie-content {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .back-link {
+    margin-top: 2rem;
+  }
+
+  .back-link a {
+    color: var(--accent-color);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .back-link a:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 768px) {
+    .movie-header {
+      grid-template-columns: 1fr;
+    }
+
+    .movie-poster {
+      max-width: 300px;
+      margin: 0 auto;
+    }
+
+    .backdrop {
+      height: 250px;
+    }
+  }
+</style>

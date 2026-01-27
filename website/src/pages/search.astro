@@ -1,0 +1,112 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MovieGrid from '../components/MovieGrid.astro';
+import SearchBar from '../components/SearchBar.astro';
+
+// Get all movies
+const allMovies = await getCollection('movies');
+
+// Get search query from URL
+const url = new URL(Astro.request.url);
+const query = url.searchParams.get('q')?.toLowerCase() || '';
+
+// Filter movies based on search query
+const filteredMovies = query
+  ? allMovies.filter((movie) => {
+      const searchableText = [
+        movie.data.title,
+        movie.data.description,
+        movie.data.director,
+        ...movie.data.cast,
+        ...movie.data.genres,
+      ].join(' ').toLowerCase();
+
+      return searchableText.includes(query);
+    })
+  : [];
+---
+
+<BaseLayout title={query ? `Search: ${query} - FilmScanner` : 'Search - FilmScanner'}>
+  <div class="search-page">
+    <h1>Search Movies</h1>
+
+    <SearchBar initialQuery={query} />
+
+    {query && (
+      <div class="search-results">
+        <p class="result-count">
+          Found {filteredMovies.length} {filteredMovies.length === 1 ? 'movie' : 'movies'} matching "{query}"
+        </p>
+
+        {filteredMovies.length > 0 ? (
+          <MovieGrid movies={filteredMovies} />
+        ) : (
+          <div class="no-results">
+            <p>No movies found matching your search.</p>
+            <p>Try different keywords or browse the <a href="/">full collection</a>.</p>
+          </div>
+        )}
+      </div>
+    )}
+
+    {!query && (
+      <div class="search-prompt">
+        <p>Enter a search query to find movies in your collection.</p>
+        <p class="search-hint">You can search by title, director, cast, genre, or description.</p>
+      </div>
+    )}
+  </div>
+</BaseLayout>
+
+<style>
+  .search-page {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .search-page h1 {
+    font-size: 2.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .search-results {
+    margin-top: 2rem;
+  }
+
+  .result-count {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+  }
+
+  .no-results {
+    text-align: center;
+    padding: 4rem 2rem;
+  }
+
+  .no-results p {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+  }
+
+  .no-results a {
+    color: var(--accent-color);
+    font-weight: 600;
+  }
+
+  .search-prompt {
+    text-align: center;
+    padding: 4rem 2rem;
+  }
+
+  .search-prompt p {
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+  }
+
+  .search-hint {
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+</style>

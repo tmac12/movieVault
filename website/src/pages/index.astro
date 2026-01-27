@@ -1,0 +1,112 @@
+---
+import { getCollection } from 'astro:content';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import MovieGrid from '../components/MovieGrid.astro';
+import SearchBar from '../components/SearchBar.astro';
+import GenreFilter from '../components/GenreFilter.astro';
+
+// Get all movies and sort by rating (descending)
+const movies = (await getCollection('movies')).sort((a, b) => b.data.rating - a.data.rating);
+
+// Calculate stats
+const totalMovies = movies.length;
+const totalRuntime = movies.reduce((sum, movie) => sum + movie.data.runtime, 0);
+const totalSizeBytes = movies.reduce((sum, movie) => sum + movie.data.fileSize, 0);
+
+// Format total size
+const formatSize = (bytes: number) => {
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1000) {
+    return `${(gb / 1024).toFixed(2)} TB`;
+  }
+  return `${gb.toFixed(2)} GB`;
+};
+
+// Format runtime
+const formatTotalRuntime = (minutes: number) => {
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days > 0) {
+    return `${days} days, ${hours % 24} hours`;
+  }
+  return `${hours} hours, ${minutes % 60} minutes`;
+};
+---
+
+<BaseLayout title="FilmScanner - My Movie Collection">
+  <div class="page-header">
+    <h1>My Movie Collection</h1>
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-value">{totalMovies}</span>
+        <span class="stat-label">Movies</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">{formatSize(totalSizeBytes)}</span>
+        <span class="stat-label">Total Size</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">{formatTotalRuntime(totalRuntime)}</span>
+        <span class="stat-label">Total Runtime</span>
+      </div>
+    </div>
+  </div>
+
+  <SearchBar />
+
+  <GenreFilter movies={movies} />
+
+  {movies.length === 0 ? (
+    <div class="empty-state">
+      <p>No movies found. Run the scanner to add movies to your collection.</p>
+    </div>
+  ) : (
+    <MovieGrid movies={movies} />
+  )}
+</BaseLayout>
+
+<style>
+  .page-header {
+    margin-bottom: 2rem;
+  }
+
+  .page-header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1.5rem;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .stats {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--accent-color);
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+  }
+</style>

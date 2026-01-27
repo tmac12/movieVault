@@ -1,0 +1,45 @@
+---
+import type { CollectionEntry } from 'astro:content';
+import MovieCard from './MovieCard.astro';
+
+interface Props {
+  movies: CollectionEntry<'movies'>[];
+}
+
+const { movies } = Astro.props;
+---
+
+<div class="movie-grid">
+  {movies.map((movie) => (
+    <MovieCard
+      title={movie.data.title}
+      slug={movie.slug}
+      coverImage={movie.data.coverImage}
+      rating={movie.data.rating}
+      releaseYear={movie.data.releaseYear}
+      genres={movie.data.genres}
+    />
+  ))}
+</div>
+
+<style>
+  .movie-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  @media (min-width: 640px) {
+    .movie-grid {
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .movie-grid {
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 2rem;
+    }
+  }
+</style>

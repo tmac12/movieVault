@@ -1,0 +1,61 @@
+---
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = "FilmScanner - My Movie Collection",
+  description = "Browse my personal movie collection"
+} = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content={description}>
+  <meta name="generator" content={Astro.generator}>
+
+  <title>{title}</title>
+
+  <!-- Open Graph / Social Media -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content={title}>
+  <meta property="og:description" content={description}>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+  <header>
+    <nav class="container">
+      <div class="nav-content">
+        <a href="/" class="logo">
+          <span class="logo-icon">🎬</span>
+          <span class="logo-text">FilmScanner</span>
+        </a>
+        <div class="nav-links">
+          <a href="/">Movies</a>
+          <a href="/search">Search</a>
+        </div>
+      </div>
+    </nav>
+  </header>
+
+  <main class="container">
+    <slot />
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>Powered by <a href="https://astro.build" target="_blank">Astro</a> & <a href="https://www.themoviedb.org" target="_blank">TMDB</a></p>
+    </div>
+  </footer>
+
+  <style is:global>
+    @import '../styles/global.css';
+  </style>
+</body>
+</html>

@@ -1,0 +1,102 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  movies: CollectionEntry<'movies'>[];
+}
+
+const { movies } = Astro.props;
+
+// Extract unique genres from all movies
+const allGenres = new Set<string>();
+movies.forEach((movie) => {
+  movie.data.genres.forEach((genre) => allGenres.add(genre));
+});
+
+const genres = Array.from(allGenres).sort();
+---
+
+{genres.length > 0 && (
+  <div class="genre-filter">
+    <h3>Filter by Genre</h3>
+    <div class="genre-chips" data-genre-filter>
+      <button class="genre-chip active" data-genre="all">All</button>
+      {genres.map((genre) => (
+        <button class="genre-chip" data-genre={genre.toLowerCase()}>
+          {genre}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
+
+<script>
+  // Client-side genre filtering
+  document.addEventListener('DOMContentLoaded', () => {
+    const filterContainer = document.querySelector('[data-genre-filter]');
+    if (!filterContainer) return;
+
+    const chips = filterContainer.querySelectorAll('.genre-chip');
+    const movieCards = document.querySelectorAll('.movie-card');
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const genre = chip.getAttribute('data-genre');
+
+        // Update active state
+        chips.forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+
+        // Filter movies
+        movieCards.forEach((card) => {
+          const cardGenres = card.querySelector('.genres-preview')?.textContent?.toLowerCase() || '';
+
+          if (genre === 'all' || cardGenres.includes(genre || '')) {
+            (card as HTMLElement).style.display = '';
+          } else {
+            (card as HTMLElement).style.display = 'none';
+          }
+        });
+      });
+    });
+  });
+</script>
+
+<style>
+  .genre-filter {
+    margin: 2rem 0;
+  }
+
+  .genre-filter h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+  }
+
+  .genre-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .genre-chip {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 20px;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .genre-chip:hover {
+    border-color: var(--accent-color);
+  }
+
+  .genre-chip.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--bg-color);
+  }
+</style>

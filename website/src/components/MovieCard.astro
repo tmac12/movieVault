@@ -1,0 +1,127 @@
+---
+interface Props {
+  title: string;
+  slug: string;
+  coverImage: string;
+  rating: number;
+  releaseYear: number;
+  genres: string[];
+}
+
+const { title, slug, coverImage, rating, releaseYear, genres } = Astro.props;
+---
+
+<a href={`/movies/${slug}`} class="movie-card">
+  <div class="poster-container">
+    <img src={coverImage} alt={`${title} poster`} loading="lazy" />
+    <div class="overlay">
+      <div class="info">
+        <h3>{title}</h3>
+        <p class="year">{releaseYear}</p>
+      </div>
+    </div>
+  </div>
+  <div class="card-footer">
+    <div class="rating">
+      <span class="star">⭐</span>
+      <span class="score">{rating.toFixed(1)}</span>
+    </div>
+    <div class="genres-preview">
+      {genres.slice(0, 2).join(', ')}
+    </div>
+  </div>
+</a>
+
+<style>
+  .movie-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .movie-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .poster-container {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+  }
+
+  .poster-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
+
+  .movie-card:hover .poster-container img {
+    transform: scale(1.05);
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex;
+    align-items: flex-end;
+    padding: 1rem;
+  }
+
+  .movie-card:hover .overlay {
+    opacity: 1;
+  }
+
+  .info h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: white;
+  }
+
+  .year {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0.25rem 0 0 0;
+  }
+
+  .card-footer {
+    padding: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .rating {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 600;
+  }
+
+  .star {
+    font-size: 1rem;
+  }
+
+  .score {
+    color: var(--accent-color);
+  }
+
+  .genres-preview {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+  }
+</style>

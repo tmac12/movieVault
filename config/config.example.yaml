@@ -1,0 +1,27 @@
+tmdb:
+  api_key: "your_api_key_here"  # Get from https://www.themoviedb.org/settings/api
+
+scanner:
+  directories:
+    - "/home/marco/Movies"
+    - "/media/external/Films"
+  extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".avi"
+    - ".mov"
+    - ".m4v"
+    - ".webm"
+    - ".flv"
+    - ".wmv"
+
+output:
+  mdx_dir: "./website/src/content/movies"     # Where to write MDX files
+  covers_dir: "./website/public/covers"        # Where to save cover images
+  auto_build: true                             # Auto-run Astro build after scan
+  cleanup_missing: false                       # Remove MDX for deleted movie files
+
+options:
+  rate_limit_delay: 250  # Milliseconds between TMDB API requests
+  download_covers: true  # Download cover images locally
+  download_backdrops: true  # Download backdrop images
