@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Node modules (will be installed in container)
+node_modules
+npm-debug.log*
+
+# Build artifacts
+website/dist
+website/.astro
+scanner
+
+# Generated content
+data/
+website/src/content/movies/*.mdx
+website/public/covers/*
+
+# Configuration (will be mounted)
+config/config.yaml
+.env
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# Documentation
+README.md
+docs/
+
+# Logs
+*.log
