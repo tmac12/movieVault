@@ -8,7 +8,7 @@ echo "========================================="
 # Run initial scan if AUTO_SCAN is enabled
 if [ "$AUTO_SCAN" = "true" ]; then
   echo "AUTO_SCAN enabled, running initial movie scan..."
-  scanner --config /config/config.yaml || echo "Warning: Scanner failed, continuing anyway..."
+  /usr/local/bin/scanner --config /config/config.yaml || echo "Warning: Scanner failed, continuing anyway..."
   echo "Initial scan completed."
 fi
 
