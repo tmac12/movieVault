@@ -1,0 +1,28 @@
+tmdb:
+  api_key: "${TMDB_API_KEY}"  # Injected from .env file
+
+scanner:
+  directories:
+    - "/movies"  # This is the mounted path inside the container
+  extensions:
+    - ".mp4"
+    - ".mkv"
+    - ".avi"
+    - ".mov"
+    - ".m4v"
+    - ".webm"
+    - ".flv"
+    - ".wmv"
+
+output:
+  mdx_dir: "/data/movies"       # Persistent storage for MDX files
+  covers_dir: "/data/covers"     # Persistent storage for cover images
+  auto_build: true               # Auto-run Astro build after scan
+  cleanup_missing: false         # Don't remove MDX for deleted movies
+
+options:
+  rate_limit_delay: 250          # Milliseconds between TMDB API requests
+  download_covers: true          # Download cover images locally
+  download_backdrops: true       # Download backdrop images
+  use_nfo: true                  # Enable Jellyfin NFO support
+  nfo_fallback_tmdb: true        # Fall back to TMDB if NFO incomplete
