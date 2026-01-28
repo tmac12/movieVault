@@ -1,5 +1,5 @@
 # Stage 1: Build Go scanner
-FROM golang:1.25-bookworm AS go-builder
+FROM golang:1.25-alpine AS go-builder
 
 WORKDIR /build
 
