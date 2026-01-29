@@ -1,10 +1,10 @@
 tmdb:
-  api_key: "${TMDB_API_KEY}"  # Injected from .env file
-  language: "en-US"  # Language for metadata (en-US, it-IT, es-ES, fr-FR, de-DE, ja-JP, etc.)
+  api_key: "${TMDB_API_KEY}"  # Injected from environment
+  language: "en-US"
 
 scanner:
   directories:
-    - "/movies"  # This is the mounted path inside the container
+    - "/movies"  # Docker mount point
   extensions:
     - ".mp4"
     - ".mkv"
@@ -14,27 +14,17 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
-  exclude_dirs:  # Directories to skip (case-insensitive, partial match)
-    - "extras"
-    - "bonus"
-    - "featurettes"
-    - "behind the scenes"
-    - "deleted scenes"
-    - "interviews"
-    - "trailers"
-    - "samples"
-    - "subs"
-    - "subtitles"
 
 output:
-  mdx_dir: "/data/movies"       # Persistent storage for MDX files
-  covers_dir: "/data/covers"     # Persistent storage for cover images
-  auto_build: true               # Auto-run Astro build after scan
-  cleanup_missing: false         # Don't remove MDX for deleted movies
+  mdx_dir: "/data/movies"           # Persistent storage in Docker
+  covers_dir: "/data/covers"        # Persistent storage in Docker
+  website_dir: "/app/website"       # Astro website in Docker
+  auto_build: false                 # Disabled - entrypoint.sh handles this
+  cleanup_missing: false
 
 options:
-  rate_limit_delay: 250          # Milliseconds between TMDB API requests
-  download_covers: true          # Download cover images locally
-  download_backdrops: true       # Download backdrop images
-  use_nfo: true                  # Enable Jellyfin NFO support
-  nfo_fallback_tmdb: true        # Fall back to TMDB if NFO incomplete
+  rate_limit_delay: 250
+  download_covers: true
+  download_backdrops: true
+  use_nfo: true
+  nfo_fallback_tmdb: true

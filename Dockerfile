@@ -49,6 +49,9 @@ COPY --from=web-builder /build /app/website
 # Create data directories
 RUN mkdir -p /data/movies /data/covers /config
 
+# Copy Docker-specific config
+COPY config/config.docker.yaml /config/config.yaml
+
 # Copy nginx config
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 

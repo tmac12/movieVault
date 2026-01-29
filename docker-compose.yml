@@ -15,8 +15,8 @@ services:
       - ./data/movies:/data/movies
       - ./data/covers:/data/covers
 
-      # Configuration
-      - ./config/config.yaml:/config/config.yaml:ro
+      # Configuration (optional - uses built-in config.docker.yaml if not mounted)
+      # - ./config/config.yaml:/config/config.yaml:ro
     environment:
       - TMDB_API_KEY=${TMDB_API_KEY}
       - AUTO_SCAN=${AUTO_SCAN:-true}
