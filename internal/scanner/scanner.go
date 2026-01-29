@@ -20,16 +20,41 @@ type FileInfo struct {
 
 // Scanner handles file system scanning for video files
 type Scanner struct {
-	extensions []string
-	mdxDir     string
+	extensions  []string
+	mdxDir      string
+	excludeDirs []string
 }
 
 // New creates a new Scanner instance
 func New(extensions []string, mdxDir string) *Scanner {
 	return &Scanner{
-		extensions: extensions,
-		mdxDir:     mdxDir,
+		extensions:  extensions,
+		mdxDir:      mdxDir,
+		excludeDirs: []string{},
 	}
+}
+
+// NewWithExclusions creates a new Scanner instance with directory exclusions
+func NewWithExclusions(extensions []string, mdxDir string, excludeDirs []string) *Scanner {
+	return &Scanner{
+		extensions:  extensions,
+		mdxDir:      mdxDir,
+		excludeDirs: excludeDirs,
+	}
+}
+
+// IsExcludedDir checks if a directory should be excluded based on exclusion patterns
+func (s *Scanner) IsExcludedDir(dirPath string) bool {
+	dirName := strings.ToLower(filepath.Base(dirPath))
+
+	for _, pattern := range s.excludeDirs {
+		pattern = strings.ToLower(pattern)
+		// Check for exact match or if pattern is contained in directory name
+		if dirName == pattern || strings.Contains(dirName, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
 // ScanDirectory recursively scans a directory for video files
@@ -45,8 +70,12 @@ func (s *Scanner) ScanDirectory(path string) ([]FileInfo, error) {
 			return err
 		}
 
-		// Skip directories
+		// Skip excluded directories
 		if info.IsDir() {
+			if s.IsExcludedDir(p) {
+				fmt.Printf("Skipping excluded directory: %s\n", p)
+				return filepath.SkipDir
+			}
 			return nil
 		}
 

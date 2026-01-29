@@ -39,8 +39,8 @@ func main() {
 		fmt.Printf("Output covers directory: %s\n", cfg.Output.CoversDir)
 	}
 
-	// Create scanner
-	s := scanner.New(cfg.Scanner.Extensions, cfg.Output.MDXDir)
+	// Create scanner with directory exclusions
+	s := scanner.NewWithExclusions(cfg.Scanner.Extensions, cfg.Output.MDXDir, cfg.Scanner.ExcludeDirs)
 
 	// Scan all directories
 	fmt.Println("Scanning directories for video files...")

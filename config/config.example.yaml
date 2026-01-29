@@ -14,6 +14,17 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  exclude_dirs:  # Directories to skip (case-insensitive, partial match)
+    - "extras"
+    - "bonus"
+    - "featurettes"
+    - "behind the scenes"
+    - "deleted scenes"
+    - "interviews"
+    - "trailers"
+    - "samples"
+    - "subs"
+    - "subtitles"
 
 output:
   mdx_dir: "./website/src/content/movies"     # Where to write MDX files

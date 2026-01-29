@@ -25,6 +25,7 @@ type TMDBConfig struct {
 type ScannerConfig struct {
 	Directories []string `yaml:"directories"`
 	Extensions  []string `yaml:"extensions"`
+	ExcludeDirs []string `yaml:"exclude_dirs"`
 }
 
 // OutputConfig holds output directory settings
