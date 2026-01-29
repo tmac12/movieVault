@@ -1,63 +1,108 @@
 ---
 import { getCollection } from 'astro:content';
 import BaseLayout from '../layouts/BaseLayout.astro';
-import MovieGrid from '../components/MovieGrid.astro';
 import SearchBar from '../components/SearchBar.astro';
 
-// Get all movies
+// Get all movies and serialize for client-side search
 const allMovies = await getCollection('movies');
-
-// Get search query from URL
-const url = new URL(Astro.request.url);
-const query = url.searchParams.get('q')?.toLowerCase() || '';
-
-// Filter movies based on search query
-const filteredMovies = query
-  ? allMovies.filter((movie) => {
-      const searchableText = [
-        movie.data.title,
-        movie.data.description,
-        movie.data.director,
-        ...movie.data.cast,
-        ...movie.data.genres,
-      ].join(' ').toLowerCase();
-
-      return searchableText.includes(query);
-    })
-  : [];
+const moviesData = allMovies.map((movie) => ({
+  slug: movie.slug,
+  title: movie.data.title,
+  description: movie.data.description || '',
+  director: movie.data.director || '',
+  cast: movie.data.cast || [],
+  genres: movie.data.genres || [],
+  coverImage: movie.data.coverImage,
+  rating: movie.data.rating,
+  releaseYear: movie.data.releaseYear,
+}));
 ---
 
-<BaseLayout title={query ? `Search: ${query} - FilmScanner` : 'Search - FilmScanner'}>
+<BaseLayout title="Search - FilmScanner">
   <div class="search-page">
     <h1>Search Movies</h1>
 
-    <SearchBar initialQuery={query} />
+    <SearchBar />
 
-    {query && (
-      <div class="search-results">
-        <p class="result-count">
-          Found {filteredMovies.length} {filteredMovies.length === 1 ? 'movie' : 'movies'} matching "{query}"
-        </p>
-
-        {filteredMovies.length > 0 ? (
-          <MovieGrid movies={filteredMovies} />
-        ) : (
-          <div class="no-results">
-            <p>No movies found matching your search.</p>
-            <p>Try different keywords or browse the <a href="/">full collection</a>.</p>
-          </div>
-        )}
+    <div id="search-results" class="search-results" style="display: none;">
+      <p id="result-count" class="result-count"></p>
+      <div id="movies-grid" class="movie-grid"></div>
+      <div id="no-results" class="no-results" style="display: none;">
+        <p>No movies found matching your search.</p>
+        <p>Try different keywords or browse the <a href="/">full collection</a>.</p>
       </div>
-    )}
+    </div>
 
-    {!query && (
-      <div class="search-prompt">
-        <p>Enter a search query to find movies in your collection.</p>
-        <p class="search-hint">You can search by title, director, cast, genre, or description.</p>
-      </div>
-    )}
+    <div id="search-prompt" class="search-prompt">
+      <p>Enter a search query to find movies in your collection.</p>
+      <p class="search-hint">You can search by title, director, cast, genre, or description.</p>
+    </div>
   </div>
 </BaseLayout>
+
+<script define:vars={{ moviesData }}>
+  // Get query parameter from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const query = urlParams.get('q')?.toLowerCase().trim() || '';
+
+  const searchResults = document.getElementById('search-results');
+  const searchPrompt = document.getElementById('search-prompt');
+  const resultCount = document.getElementById('result-count');
+  const moviesGrid = document.getElementById('movies-grid');
+  const noResults = document.getElementById('no-results');
+
+  if (query) {
+    // Hide prompt, show results
+    searchPrompt.style.display = 'none';
+    searchResults.style.display = 'block';
+
+    // Filter movies
+    const filteredMovies = moviesData.filter((movie) => {
+      const searchableText = [
+        movie.title,
+        movie.description,
+        movie.director,
+        ...movie.cast,
+        ...movie.genres,
+      ].join(' ').toLowerCase();
+
+      return searchableText.includes(query);
+    });
+
+    // Update result count
+    resultCount.textContent = `Found ${filteredMovies.length} ${filteredMovies.length === 1 ? 'movie' : 'movies'} matching "${query}"`;
+
+    if (filteredMovies.length > 0) {
+      // Render movie cards
+      moviesGrid.innerHTML = filteredMovies.map((movie) => `
+        <a href="/movies/${movie.slug}" class="movie-card">
+          <div class="poster-container">
+            <img src="${movie.coverImage}" alt="${movie.title} poster" loading="lazy" />
+            <div class="overlay">
+              <div class="info">
+                <h3>${movie.title}</h3>
+                <p class="year">${movie.releaseYear}</p>
+              </div>
+            </div>
+          </div>
+          <div class="card-footer">
+            <div class="rating">
+              <span class="star">⭐</span>
+              <span class="score">${movie.rating.toFixed(1)}</span>
+            </div>
+            <div class="genres-preview">
+              ${movie.genres.slice(0, 2).join(', ')}
+            </div>
+          </div>
+        </a>
+      `).join('');
+      noResults.style.display = 'none';
+    } else {
+      moviesGrid.innerHTML = '';
+      noResults.style.display = 'block';
+    }
+  }
+</script>
 
 <style>
   .search-page {
@@ -78,6 +123,118 @@ const filteredMovies = query
     font-size: 1.1rem;
     color: var(--text-muted);
     margin-bottom: 2rem;
+  }
+
+  .movie-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+  }
+
+  @media (min-width: 640px) {
+    .movie-grid {
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .movie-grid {
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 2rem;
+    }
+  }
+
+  .movie-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  }
+
+  .movie-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .poster-container {
+    position: relative;
+    aspect-ratio: 2 / 3;
+    overflow: hidden;
+  }
+
+  .poster-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.3s;
+  }
+
+  .movie-card:hover .poster-container img {
+    transform: scale(1.05);
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, transparent 50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    display: flex;
+    align-items: flex-end;
+    padding: 1rem;
+  }
+
+  .movie-card:hover .overlay {
+    opacity: 1;
+  }
+
+  .info h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 0;
+    color: white;
+  }
+
+  .year {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0.25rem 0 0 0;
+  }
+
+  .card-footer {
+    padding: 0.75rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .rating {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 600;
+  }
+
+  .star {
+    font-size: 1rem;
+  }
+
+  .score {
+    color: var(--accent-color);
+  }
+
+  .genres-preview {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
   }
 
   .no-results {
