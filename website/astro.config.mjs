@@ -6,4 +6,5 @@ export default defineConfig({
   // Use relative URLs for deployment flexibility
   // Set SITE env var if you need absolute URLs: SITE=http://your-domain.com npm run build
   output: 'static',
+  trailingSlash: 'never', // Prevent trailing slash redirects
 });
