@@ -99,6 +99,9 @@ func main() {
 	// Process each file
 	successCount := 0
 	errorCount := 0
+	nfoCount := 0
+	tmdbCount := 0
+	mixedCount := 0
 
 	for i, file := range filesToProcess {
 		fmt.Printf("\n[%d/%d] Processing: %s\n", i+1, len(filesToProcess), file.FileName)
@@ -162,9 +165,20 @@ func main() {
 		movie.FileSize = file.Size
 		movie.Slug = file.Slug
 
+		// Always show metadata source
+		fmt.Printf("  ✓ %s (%d) - Source: %s\n", movie.Title, movie.ReleaseYear, metadataSource)
+
+		// Track metadata sources for summary
+		switch metadataSource {
+		case "NFO":
+			nfoCount++
+		case "TMDB":
+			tmdbCount++
+		case "NFO+TMDB":
+			mixedCount++
+		}
+
 		if *verbose {
-			fmt.Printf("  Metadata source: %s\n", metadataSource)
-			fmt.Printf("  Found: %s (%d)\n", movie.Title, movie.ReleaseYear)
 			if movie.TMDBID > 0 {
 				fmt.Printf("  TMDB ID: %d\n", movie.TMDBID)
 			}
@@ -227,6 +241,20 @@ func main() {
 	fmt.Printf("  Successful: %d\n", successCount)
 	if errorCount > 0 {
 		fmt.Printf("  Errors: %d\n", errorCount)
+	}
+
+	// Show metadata source breakdown
+	if successCount > 0 {
+		fmt.Printf("\nMetadata Sources:\n")
+		if nfoCount > 0 {
+			fmt.Printf("  NFO files: %d (%.0f%%)\n", nfoCount, float64(nfoCount)/float64(successCount)*100)
+		}
+		if tmdbCount > 0 {
+			fmt.Printf("  TMDB API: %d (%.0f%%)\n", tmdbCount, float64(tmdbCount)/float64(successCount)*100)
+		}
+		if mixedCount > 0 {
+			fmt.Printf("  NFO + TMDB (merged): %d (%.0f%%)\n", mixedCount, float64(mixedCount)/float64(successCount)*100)
+		}
 	}
 
 	// Build Astro site if enabled and not disabled via flag
