@@ -262,9 +262,13 @@ func main() {
 	// Build Astro site if enabled and not disabled via flag
 	if cfg.Output.AutoBuild && !*noBuild && successCount > 0 {
 		fmt.Println("\nBuilding Astro website...")
-		if err := buildAstroSite(); err != nil {
+		websiteDir := cfg.Output.WebsiteDir
+		if websiteDir == "" {
+			websiteDir = "./website"
+		}
+		if err := buildAstroSite(websiteDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to build Astro site: %v\n", err)
-			fmt.Fprintf(os.Stderr, "You can build manually with: cd website && npm run build\n")
+			fmt.Fprintf(os.Stderr, "You can build manually with: cd %s && npm run build\n", websiteDir)
 		} else {
 			fmt.Println("✓ Astro site built successfully")
 		}
@@ -276,12 +280,16 @@ func main() {
 }
 
 // buildAstroSite runs the Astro build command
-func buildAstroSite() error {
-	websiteDir := "./website"
-
+func buildAstroSite(websiteDir string) error {
 	// Check if website directory exists
 	if _, err := os.Stat(websiteDir); os.IsNotExist(err) {
-		return fmt.Errorf("website directory does not exist")
+		return fmt.Errorf("website directory does not exist at: %s", websiteDir)
+	}
+
+	// Check if package.json exists (confirm it's a Node.js project)
+	packageJSON := filepath.Join(websiteDir, "package.json")
+	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
+		return fmt.Errorf("package.json not found in %s (not a Node.js project?)", websiteDir)
 	}
 
 	// Check if node_modules exists
