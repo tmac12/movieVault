@@ -59,6 +59,16 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Copy health check script
+COPY docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /healthcheck.sh
+
+# Install curl for health check
+RUN apk add --no-cache curl
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD /healthcheck.sh
+
 EXPOSE 80
 
 ENTRYPOINT ["/entrypoint.sh"]

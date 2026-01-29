@@ -2,12 +2,19 @@
 interface Props {
   title?: string;
   description?: string;
+  image?: string;
+  type?: "website" | "article";
 }
 
 const {
   title = "FilmScanner - My Movie Collection",
-  description = "Browse my personal movie collection"
+  description = "Browse my personal movie collection",
+  image = "/og-default.jpg",
+  type = "website"
 } = Astro.props;
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site || "http://localhost:4321");
+const ogImageUrl = new URL(image, Astro.site || "http://localhost:4321");
 ---
 
 <!DOCTYPE html>
@@ -20,10 +27,21 @@ const {
 
   <title>{title}</title>
 
+  <!-- Canonical URL -->
+  <link rel="canonical" href={canonicalURL}>
+
   <!-- Open Graph / Social Media -->
-  <meta property="og:type" content="website">
+  <meta property="og:type" content={type}>
+  <meta property="og:url" content={canonicalURL}>
   <meta property="og:title" content={title}>
   <meta property="og:description" content={description}>
+  <meta property="og:image" content={ogImageUrl}>
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content={title}>
+  <meta name="twitter:description" content={description}>
+  <meta name="twitter:image" content={ogImageUrl}>
 
   <!-- Favicon -->
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">

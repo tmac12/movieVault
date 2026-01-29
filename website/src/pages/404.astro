@@ -1,0 +1,119 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SearchBar from '../components/SearchBar.astro';
+---
+
+<BaseLayout title="Movie Not Found - FilmScanner">
+  <div class="error-container">
+    <div class="error-icon">🎬</div>
+    <h1>Movie Not Found</h1>
+    <p class="error-description">
+      The movie you're looking for isn't in your collection.
+    </p>
+
+    <div class="search-section">
+      <h2>Search your collection</h2>
+      <SearchBar />
+    </div>
+
+    <div class="error-actions">
+      <a href="/" class="button button-primary">Browse All Movies</a>
+    </div>
+
+    <p class="error-hint">
+      If you think this movie should be here, try running a fresh scan or check your movie directories.
+    </p>
+  </div>
+</BaseLayout>
+
+<style>
+  .error-container {
+    text-align: center;
+    padding: 4rem 2rem;
+    max-width: 700px;
+    margin: 0 auto;
+    min-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .error-icon {
+    font-size: 5rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+  }
+
+  h1 {
+    font-size: 2.5rem;
+    color: var(--text-color);
+    margin-bottom: 1rem;
+  }
+
+  .error-description {
+    font-size: 1.25rem;
+    color: var(--text-muted);
+    margin-bottom: 3rem;
+  }
+
+  .search-section {
+    width: 100%;
+    margin-bottom: 2rem;
+  }
+
+  .search-section h2 {
+    font-size: 1.25rem;
+    color: var(--text-color);
+    margin-bottom: 1rem;
+  }
+
+  .error-actions {
+    margin: 2rem 0;
+  }
+
+  .button {
+    display: inline-block;
+    padding: 0.875rem 2rem;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+
+  .button-primary {
+    background: var(--accent-color);
+    color: var(--bg-color);
+  }
+
+  .button-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .error-hint {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    margin-top: 2rem;
+    font-style: italic;
+  }
+
+  @media (max-width: 640px) {
+    .error-container {
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+    }
+
+    .error-icon {
+      font-size: 4rem;
+    }
+
+    .error-description {
+      font-size: 1.1rem;
+    }
+  }
+</style>

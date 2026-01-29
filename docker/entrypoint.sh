@@ -8,8 +8,12 @@ echo "========================================="
 # Run initial scan if AUTO_SCAN is enabled
 if [ "$AUTO_SCAN" = "true" ]; then
   echo "AUTO_SCAN enabled, running initial movie scan..."
-  /usr/local/bin/scanner --config /config/config.yaml || echo "Warning: Scanner failed, continuing anyway..."
-  echo "Initial scan completed."
+  if ! /usr/local/bin/scanner --config /config/config.yaml; then
+    echo "ERROR: Scanner failed. Container will continue but data may be stale."
+    >&2 echo "Scanner failed at $(date)"
+  else
+    echo "Initial scan completed successfully."
+  fi
 fi
 
 # Link generated content to Astro directories
@@ -33,7 +37,10 @@ echo "Content synced: $(ls /app/website/src/content/movies/*.mdx 2>/dev/null | w
 if [ ! -d "/app/website/dist" ]; then
   echo "Building Astro website..."
   cd /app/website
-  npm run build || echo "Warning: Astro build failed"
+  if ! npm run build; then
+    echo "ERROR: Astro build failed. Website may not be available."
+    >&2 echo "Astro build failed at $(date)"
+  fi
   cd /
 fi
 
