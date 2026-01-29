@@ -159,11 +159,13 @@ func main() {
 			continue
 		}
 
+		// Generate clean slug from metadata title (not from filename)
+		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
+
 		// Add file information
 		movie.FilePath = file.Path
 		movie.FileName = file.FileName
 		movie.FileSize = file.Size
-		movie.Slug = file.Slug
 
 		// Always show metadata source
 		fmt.Printf("  ✓ %s (%d) - Source: %s\n", movie.Title, movie.ReleaseYear, metadataSource)

@@ -10,12 +10,14 @@ import (
 var (
 	// Patterns to remove from filenames
 	yearPattern         = regexp.MustCompile(`[\[\(]?(\d{4})[\]\)]?`)
-	qualityPattern      = regexp.MustCompile(`(?i)(1080p|720p|480p|2160p|4K|BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV)`)
-	codecPattern        = regexp.MustCompile(`(?i)(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX)`)
-	audioPattern        = regexp.MustCompile(`(?i)(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos)`)
-	releaseGroupPattern = regexp.MustCompile(`-[A-Z0-9]+$`)
+	qualityPattern      = regexp.MustCompile(`(?i)\b(1080p?|720p?|480p?|2160p?|4K|BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV)\b`)
+	codecPattern        = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC)\b`)
+	audioPattern        = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC)\b`)
+	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)
+	subtitlePattern     = regexp.MustCompile(`(?i)\b(sub|subs|subtitle|subtitles|subbed)\b`)
+	releaseGroupPattern = regexp.MustCompile(`(?i)[-\.]([A-Z0-9]+(\.[A-Z]+)*|MIRCrew|RARBG|YTS|YIFY|PublicHD|Tigole|QxR|UTR|ION10|EVO|CMRG|FGT)$`)
 	bracketPattern      = regexp.MustCompile(`\[([^\]]+)\]`)
-	extraInfoPattern    = regexp.MustCompile(`(?i)(EXTENDED|UNRATED|DIRECTOR.?S.?CUT|REMASTERED|THEATRICAL)`)
+	extraInfoPattern    = regexp.MustCompile(`(?i)\b(EXTENDED|UNRATED|DIRECTOR.?S.?CUT|REMASTERED|THEATRICAL|IMAX|DC|UHD|HDR|HDR10)\b`)
 )
 
 // ExtractTitleAndYear extracts the movie title and year from a filename
@@ -33,22 +35,28 @@ func ExtractTitleAndYear(filename string) (title string, year int) {
 	name = yearPattern.ReplaceAllString(name, "")
 
 	// Remove quality markers
-	name = qualityPattern.ReplaceAllString(name, "")
+	name = qualityPattern.ReplaceAllString(name, " ")
 
 	// Remove codec info
-	name = codecPattern.ReplaceAllString(name, "")
+	name = codecPattern.ReplaceAllString(name, " ")
 
 	// Remove audio info
-	name = audioPattern.ReplaceAllString(name, "")
+	name = audioPattern.ReplaceAllString(name, " ")
+
+	// Remove language codes
+	name = languagePattern.ReplaceAllString(name, " ")
+
+	// Remove subtitle markers
+	name = subtitlePattern.ReplaceAllString(name, " ")
 
 	// Remove extra info
-	name = extraInfoPattern.ReplaceAllString(name, "")
-
-	// Remove content in brackets
-	name = bracketPattern.ReplaceAllString(name, "")
+	name = extraInfoPattern.ReplaceAllString(name, " ")
 
 	// Remove release group (usually after a dash at the end)
 	name = releaseGroupPattern.ReplaceAllString(name, "")
+
+	// Remove content in brackets
+	name = bracketPattern.ReplaceAllString(name, " ")
 
 	// Replace dots and underscores with spaces
 	name = strings.ReplaceAll(name, ".", " ")
