@@ -203,30 +203,108 @@ Plot summary...
 
 ## Configuration System
 
-`config/config.yaml` structure:
+**Version:** v1.2 - Dual-config pattern (as of January 29, 2026)
+
+MovieVault uses **two configuration files** for different deployment scenarios:
+
+### Configuration Files
+
+| File | Purpose | API Key | Used By |
+|------|---------|---------|---------|
+| `config/config.yaml` | Local development | Hardcoded | `./scanner` |
+| `config/config.docker.yaml` | Docker deployment | Env var | Docker containers |
+| `.env` | Docker secrets | Real keys | Docker Compose |
+
+### Local Development Config (`config/config.yaml`)
 
 ```yaml
 tmdb:
-  api_key: "..."           # Required: TMDB API key
+  api_key: "your_actual_key_here"  # Hardcoded for local use
+  language: "en-US"
 
 scanner:
-  directories: [...]       # Paths to scan
+  directories: ["/Users/you/Movies"]  # Local paths
   extensions: [".mkv", ".mp4", ...]
 
 output:
   mdx_dir: "./website/src/content/movies"
   covers_dir: "./website/public/covers"
-  auto_build: true         # Run Astro build after scan
+  website_dir: "./website"
+  auto_build: true
 
 options:
-  rate_limit_delay: 250    # ms between TMDB calls
+  rate_limit_delay: 250
   download_covers: true
   download_backdrops: true
   use_nfo: true            # Enable NFO parsing (v1.1.0)
   nfo_fallback_tmdb: true  # Merge TMDB if NFO incomplete
 ```
 
+**Security:** Gitignored (`/config/config.yaml` in .gitignore line 2)
+
+### Docker Deployment Config (`config/config.docker.yaml`)
+
+```yaml
+tmdb:
+  api_key: "${TMDB_API_KEY}"  # Environment variable placeholder
+  language: "${TMDB_LANGUAGE:-en-US}"
+
+scanner:
+  directories: ["/movies"]  # Container paths
+  extensions: [".mkv", ".mp4", ...]
+
+output:
+  mdx_dir: "/data/movies"     # Mapped to ./data/movies
+  covers_dir: "/data/covers"  # Mapped to ./data/covers
+  auto_build: true
+
+options:
+  rate_limit_delay: 250
+  download_covers: true
+  download_backdrops: true
+  use_nfo: true
+  nfo_fallback_tmdb: true
+```
+
+**Security:** Safe to commit (no secrets, uses env vars)
+
+### Environment Variables (`.env`)
+
+```bash
+TMDB_API_KEY=your_actual_key_here
+AUTO_SCAN=true
+SCAN_INTERVAL=3600
+WEB_PORT=8080
+```
+
+**Security:** Gitignored (`.env` in .gitignore line 3)
+
+### How Docker Config Works
+
+1. Docker Compose reads `.env` file automatically
+2. Mounts `config.docker.yaml` as `/config/config.yaml` inside container
+3. Go app reads config file and expands `${TMDB_API_KEY}` from environment
+4. No secrets in git-tracked files
+
+**docker-compose.yml excerpt:**
+```yaml
+volumes:
+  - ./config/config.docker.yaml:/config/config.yaml:ro  # Note: .docker variant
+environment:
+  - TMDB_API_KEY=${TMDB_API_KEY}  # From .env file
+```
+
+### Why Two Configs?
+
+**Problem:** Can't commit API keys to git, but config files need them.
+
+**Solution:**
+- **Local:** Simple hardcoded config (fast iteration, gitignored)
+- **Docker:** Environment variables (secure, shareable, 12-factor compliant)
+
 **Validation:** `internal/config/config.go` validates required fields on load.
+
+**See Also:** `CONFIG.md` for complete configuration documentation
 
 ## Critical Implementation Details
 
@@ -378,6 +456,51 @@ Scanner needs read access to movie directories. Docker: ensure volume mounts are
 - Astro build: ~45 seconds
 
 ## Recent Changes & Migration Notes
+
+### v1.2.0 - Dual-Config Pattern & Security Fixes (2026-01-29)
+
+**Breaking Changes:** Docker deployment requires changes to docker-compose.yml
+
+**New Files:**
+- `CONFIG.md` - Comprehensive configuration documentation
+- `.env` - Docker environment secrets (gitignored)
+- `SECURITY_CLEANUP_REPORT.md` - API key exposure incident report
+
+**Modified Files:**
+- `docker-compose.yml` - Now mounts `config.docker.yaml` instead of `config.yaml`
+- `CLAUDE.md` - Updated configuration documentation
+- `.gitignore` - Already protected `.env` and `config/config.yaml`
+
+**Config Migration:**
+
+For Docker users, update `docker-compose.yml`:
+```yaml
+# OLD (v1.1):
+- ./config/config.yaml:/config/config.yaml:ro
+
+# NEW (v1.2):
+- ./config/config.docker.yaml:/config/config.yaml:ro
+```
+
+Create `.env` file:
+```bash
+cp .env.example .env
+# Edit .env and add your TMDB API key
+```
+
+**Behavior Changes:**
+- Local runs (`./scanner`): No changes, still uses `config/config.yaml`
+- Docker runs: Now uses `.env` for API key (more secure)
+- Both config files coexist for different use cases
+
+**Security Improvements:**
+- API keys in Docker now via environment variables (12-factor pattern)
+- No secrets in git-tracked files
+- Separate configs prevent accidental key commits
+
+See `CONFIG.md` for complete migration guide.
+
+---
 
 ### v1.1.0 - NFO Support (2026-01-27)
 
