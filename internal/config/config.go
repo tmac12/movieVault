@@ -33,6 +33,7 @@ type ScannerConfig struct {
 type OutputConfig struct {
 	MDXDir         string `yaml:"mdx_dir"`
 	CoversDir      string `yaml:"covers_dir"`
+	WebsiteDir     string `yaml:"website_dir"`
 	AutoBuild      bool   `yaml:"auto_build"`
 	CleanupMissing bool   `yaml:"cleanup_missing"`
 }

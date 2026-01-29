@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- Film reel design with gradient -->
+  <defs>
+    <linearGradient id="filmGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff6b6b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ee5a6f;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="centerGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2c3e50;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#34495e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer ring (film reel) -->
+  <circle cx="32" cy="32" r="28" fill="url(#filmGradient)" stroke="#c0392b" stroke-width="2"/>
+
+  <!-- Film holes (4 around the circle) -->
+  <circle cx="32" cy="8" r="3.5" fill="#2c3e50"/>
+  <circle cx="56" cy="32" r="3.5" fill="#2c3e50"/>
+  <circle cx="32" cy="56" r="3.5" fill="#2c3e50"/>
+  <circle cx="8" cy="32" r="3.5" fill="#2c3e50"/>
+
+  <!-- Center hub -->
+  <circle cx="32" cy="32" r="12" fill="url(#centerGradient)" stroke="#1a252f" stroke-width="2"/>
+
+  <!-- Center details (play button) -->
+  <polygon points="28,26 28,38 38,32" fill="#ff6b6b"/>
+</svg>

@@ -3,9 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/marco/movieVault/internal/config"
 	"github.com/marco/movieVault/internal/metadata"
@@ -25,38 +27,61 @@ var (
 func main() {
 	flag.Parse()
 
+	// Setup structured logger
+	logLevel := slog.LevelInfo
+	if *verbose {
+		logLevel = slog.LevelDebug
+	}
+
+	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	})
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	startTime := time.Now()
+
 	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		slog.Error("failed to load config", "path", *configPath, "error", err)
 		os.Exit(1)
 	}
 
+	slog.Info("configuration loaded",
+		"path", *configPath,
+		"directories", len(cfg.Scanner.Directories),
+		"extensions", len(cfg.Scanner.Extensions),
+		"nfo_enabled", cfg.Options.UseNFO,
+		"nfo_fallback", cfg.Options.NFOFallbackTMDB,
+	)
+
 	if *verbose {
-		fmt.Printf("Configuration loaded from: %s\n", *configPath)
-		fmt.Printf("Scanning directories: %v\n", cfg.Scanner.Directories)
-		fmt.Printf("Output MDX directory: %s\n", cfg.Output.MDXDir)
-		fmt.Printf("Output covers directory: %s\n", cfg.Output.CoversDir)
+		slog.Debug("config details",
+			"scan_dirs", cfg.Scanner.Directories,
+			"mdx_dir", cfg.Output.MDXDir,
+			"covers_dir", cfg.Output.CoversDir,
+		)
 	}
 
 	// Create scanner with directory exclusions
 	s := scanner.NewWithExclusions(cfg.Scanner.Extensions, cfg.Output.MDXDir, cfg.Scanner.ExcludeDirs)
 
 	// Scan all directories
-	fmt.Println("Scanning directories for video files...")
+	slog.Info("scanning directories for video files", "count", len(cfg.Scanner.Directories))
 	files, err := s.ScanAll(cfg.Scanner.Directories)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error scanning directories: %v\n", err)
+		slog.Error("failed to scan directories", "error", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Found %d video files\n", len(files))
+	slog.Info("scan complete", "files_found", len(files))
 
 	// Filter files based on force-refresh flag
 	var filesToProcess []scanner.FileInfo
 	if *forceRefresh {
 		filesToProcess = files
-		fmt.Println("Force refresh enabled: processing all files")
+		slog.Info("force refresh enabled", "processing_all", true)
 	} else {
 		for _, file := range files {
 			if file.ShouldScan {
@@ -65,16 +90,16 @@ func main() {
 		}
 		skippedCount := len(files) - len(filesToProcess)
 		if skippedCount > 0 {
-			fmt.Printf("Skipping %d files (MDX already exists)\n", skippedCount)
+			slog.Info("skipping existing files", "count", skippedCount)
 		}
 	}
 
 	if len(filesToProcess) == 0 {
-		fmt.Println("No new files to process")
+		slog.Info("no new files to process")
 		return
 	}
 
-	fmt.Printf("Processing %d files\n", len(filesToProcess))
+	slog.Info("processing files", "count", len(filesToProcess))
 
 	if *dryRun {
 		fmt.Println("\nDRY RUN MODE - No actual changes will be made\n")
@@ -104,14 +129,16 @@ func main() {
 	mixedCount := 0
 
 	for i, file := range filesToProcess {
-		fmt.Printf("\n[%d/%d] Processing: %s\n", i+1, len(filesToProcess), file.FileName)
+		slog.Info("processing file",
+			"progress", fmt.Sprintf("%d/%d", i+1, len(filesToProcess)),
+			"filename", file.FileName,
+		)
 
-		if *verbose {
-			fmt.Printf("  Extracted title: %s\n", file.Title)
-			if file.Year > 0 {
-				fmt.Printf("  Extracted year: %d\n", file.Year)
-			}
-		}
+		slog.Debug("file details",
+			"title", file.Title,
+			"year", file.Year,
+			"path", file.Path,
+		)
 
 		// Fetch metadata from NFO or TMDB
 		var movie *writer.Movie
@@ -126,9 +153,7 @@ func main() {
 			if err != nil {
 				// NFO not found or parse error - fall back to TMDB if enabled
 				if cfg.Options.NFOFallbackTMDB {
-					if *verbose {
-						fmt.Printf("  NFO error: %v, falling back to TMDB\n", err)
-					}
+					slog.Debug("nfo error, falling back to tmdb", "error", err)
 					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 					metadataSource = "TMDB"
 				}
@@ -137,9 +162,7 @@ func main() {
 
 				// Check for incomplete NFO data
 				if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
-					if *verbose {
-						fmt.Printf("  NFO incomplete, enriching with TMDB\n")
-					}
+					slog.Debug("nfo incomplete, enriching with tmdb")
 					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
@@ -154,19 +177,29 @@ func main() {
 		}
 
 		if err != nil {
-			fmt.Printf("  ❌ Error fetching metadata: %v\n", err)
+			slog.Error("failed to fetch metadata",
+				"filename", file.FileName,
+				"title", file.Title,
+				"error", err,
+			)
 			errorCount++
 			continue
 		}
+
+		// Generate clean slug from metadata title (not from filename)
+		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
 
 		// Add file information
 		movie.FilePath = file.Path
 		movie.FileName = file.FileName
 		movie.FileSize = file.Size
-		movie.Slug = file.Slug
 
-		// Always show metadata source
-		fmt.Printf("  ✓ %s (%d) - Source: %s\n", movie.Title, movie.ReleaseYear, metadataSource)
+		// Log successful metadata fetch
+		slog.Info("metadata fetched",
+			"movie", movie.Title,
+			"year", movie.ReleaseYear,
+			"source", metadataSource,
+		)
 
 		// Track metadata sources for summary
 		switch metadataSource {
@@ -178,14 +211,11 @@ func main() {
 			mixedCount++
 		}
 
-		if *verbose {
-			if movie.TMDBID > 0 {
-				fmt.Printf("  TMDB ID: %d\n", movie.TMDBID)
-			}
-			if movie.Rating > 0 {
-				fmt.Printf("  Rating: %.1f/10\n", movie.Rating)
-			}
-		}
+		slog.Debug("movie details",
+			"tmdb_id", movie.TMDBID,
+			"rating", movie.Rating,
+			"genres", movie.Genres,
+		)
 
 		// Download cover image
 		if cfg.Options.DownloadCovers {
@@ -196,11 +226,9 @@ func main() {
 			searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 			if searchResult != nil && searchResult.PosterPath != "" {
 				if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err != nil {
-					if *verbose {
-						fmt.Printf("  Warning: Failed to download cover: %v\n", err)
-					}
-				} else if *verbose {
-					fmt.Printf("  ✓ Downloaded cover image\n")
+					slog.Warn("failed to download cover", "movie", movie.Title, "error", err)
+				} else {
+					slog.Debug("downloaded cover image", "movie", movie.Title)
 				}
 			}
 		}
@@ -213,58 +241,62 @@ func main() {
 			searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 			if searchResult != nil && searchResult.BackdropPath != "" {
 				if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err != nil {
-					if *verbose {
-						fmt.Printf("  Warning: Failed to download backdrop: %v\n", err)
-					}
-				} else if *verbose {
-					fmt.Printf("  ✓ Downloaded backdrop image\n")
+					slog.Warn("failed to download backdrop", "movie", movie.Title, "error", err)
+				} else {
+					slog.Debug("downloaded backdrop image", "movie", movie.Title)
 				}
 			}
 		}
 
 		// Write MDX file
 		if err := mdxWriter.WriteMDXFile(movie); err != nil {
-			fmt.Printf("  ❌ Error writing MDX file: %v\n", err)
+			slog.Error("failed to write mdx file",
+				"movie", movie.Title,
+				"slug", movie.Slug,
+				"error", err,
+			)
 			errorCount++
 			continue
 		}
 
-		fmt.Printf("  ✓ Created: %s.mdx\n", movie.Slug)
+		slog.Info("mdx file created", "slug", movie.Slug)
 		successCount++
 	}
 
 	// Print summary
-	fmt.Printf("\n" + repeat("=", 50) + "\n")
-	fmt.Printf("Summary:\n")
-	fmt.Printf("  Total files scanned: %d\n", len(files))
-	fmt.Printf("  Files processed: %d\n", len(filesToProcess))
-	fmt.Printf("  Successful: %d\n", successCount)
-	if errorCount > 0 {
-		fmt.Printf("  Errors: %d\n", errorCount)
-	}
+	duration := time.Since(startTime)
+	slog.Info("scan complete",
+		"total_files", len(files),
+		"processed", len(filesToProcess),
+		"successful", successCount,
+		"errors", errorCount,
+		"duration_sec", duration.Seconds(),
+	)
 
 	// Show metadata source breakdown
 	if successCount > 0 {
-		fmt.Printf("\nMetadata Sources:\n")
-		if nfoCount > 0 {
-			fmt.Printf("  NFO files: %d (%.0f%%)\n", nfoCount, float64(nfoCount)/float64(successCount)*100)
-		}
-		if tmdbCount > 0 {
-			fmt.Printf("  TMDB API: %d (%.0f%%)\n", tmdbCount, float64(tmdbCount)/float64(successCount)*100)
-		}
-		if mixedCount > 0 {
-			fmt.Printf("  NFO + TMDB (merged): %d (%.0f%%)\n", mixedCount, float64(mixedCount)/float64(successCount)*100)
-		}
+		slog.Info("metadata sources",
+			"nfo_count", nfoCount,
+			"nfo_percent", fmt.Sprintf("%.0f%%", float64(nfoCount)/float64(successCount)*100),
+			"tmdb_count", tmdbCount,
+			"tmdb_percent", fmt.Sprintf("%.0f%%", float64(tmdbCount)/float64(successCount)*100),
+			"mixed_count", mixedCount,
+			"mixed_percent", fmt.Sprintf("%.0f%%", float64(mixedCount)/float64(successCount)*100),
+		)
 	}
 
 	// Build Astro site if enabled and not disabled via flag
 	if cfg.Output.AutoBuild && !*noBuild && successCount > 0 {
-		fmt.Println("\nBuilding Astro website...")
-		if err := buildAstroSite(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to build Astro site: %v\n", err)
-			fmt.Fprintf(os.Stderr, "You can build manually with: cd website && npm run build\n")
+		slog.Info("building astro website")
+		websiteDir := cfg.Output.WebsiteDir
+		if websiteDir == "" {
+			websiteDir = "./website"
+		}
+		if err := buildAstroSite(websiteDir); err != nil {
+			slog.Error("failed to build astro site", "error", err, "website_dir", websiteDir)
+			slog.Info("manual build command", "command", fmt.Sprintf("cd %s && npm run build", websiteDir))
 		} else {
-			fmt.Println("✓ Astro site built successfully")
+			slog.Info("astro site built successfully")
 		}
 	}
 
@@ -274,12 +306,16 @@ func main() {
 }
 
 // buildAstroSite runs the Astro build command
-func buildAstroSite() error {
-	websiteDir := "./website"
-
+func buildAstroSite(websiteDir string) error {
 	// Check if website directory exists
 	if _, err := os.Stat(websiteDir); os.IsNotExist(err) {
-		return fmt.Errorf("website directory does not exist")
+		return fmt.Errorf("website directory does not exist at: %s", websiteDir)
+	}
+
+	// Check if package.json exists (confirm it's a Node.js project)
+	packageJSON := filepath.Join(websiteDir, "package.json")
+	if _, err := os.Stat(packageJSON); os.IsNotExist(err) {
+		return fmt.Errorf("package.json not found in %s (not a Node.js project?)", websiteDir)
 	}
 
 	// Check if node_modules exists

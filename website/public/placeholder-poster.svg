@@ -1,0 +1,6 @@
+<svg width="500" height="750" xmlns="http://www.w3.org/2000/svg">
+  <rect width="500" height="750" fill="#1a1a1a"/>
+  <text x="250" y="350" font-family="Arial, sans-serif" font-size="48" fill="#666" text-anchor="middle">🎬</text>
+  <text x="250" y="420" font-family="Arial, sans-serif" font-size="20" fill="#666" text-anchor="middle">No Image</text>
+  <text x="250" y="450" font-family="Arial, sans-serif" font-size="14" fill="#444" text-anchor="middle">Available</text>
+</svg>

@@ -49,12 +49,25 @@ COPY --from=web-builder /build /app/website
 # Create data directories
 RUN mkdir -p /data/movies /data/covers /config
 
+# Copy Docker-specific config
+COPY config/config.docker.yaml /config/config.yaml
+
 # Copy nginx config
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy entrypoint script
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+
+# Copy health check script
+COPY docker/healthcheck.sh /healthcheck.sh
+RUN chmod +x /healthcheck.sh
+
+# Install curl for health check
+RUN apk add --no-cache curl
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD /healthcheck.sh
 
 EXPOSE 80
 

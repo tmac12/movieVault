@@ -1,11 +1,9 @@
 tmdb:
-  api_key: "your_api_key_here"  # Get from https://www.themoviedb.org/settings/api
-  language: "en-US"  # Language for metadata (en-US, it-IT, es-ES, fr-FR, de-DE, ja-JP, etc.)
+  api_key: "YOUR_TMDB_API_KEY_HERE"  # Get from https://www.themoviedb.org/settings/api
 
 scanner:
   directories:
-    - "/home/marco/Movies"
-    - "/media/external/Films"
+    - "/path/to/your/movies"         # Add your movie directories here
   extensions:
     - ".mp4"
     - ".mkv"
@@ -15,21 +13,11 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
-  exclude_dirs:  # Directories to skip (case-insensitive, partial match)
-    - "extras"
-    - "bonus"
-    - "featurettes"
-    - "behind the scenes"
-    - "deleted scenes"
-    - "interviews"
-    - "trailers"
-    - "samples"
-    - "subs"
-    - "subtitles"
 
 output:
   mdx_dir: "./website/src/content/movies"     # Where to write MDX files
   covers_dir: "./website/public/covers"        # Where to save cover images
+  website_dir: "./website"                     # Astro website directory (for auto-build)
   auto_build: true                             # Auto-run Astro build after scan
   cleanup_missing: false                       # Remove MDX for deleted movie files
 
@@ -37,3 +25,5 @@ options:
   rate_limit_delay: 250  # Milliseconds between TMDB API requests
   download_covers: true  # Download cover images locally
   download_backdrops: true  # Download backdrop images
+  use_nfo: true  # Enable .nfo file parsing for metadata
+  nfo_fallback_tmdb: true  # Fall back to TMDB if .nfo is missing or incomplete

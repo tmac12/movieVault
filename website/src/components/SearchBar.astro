@@ -1,26 +1,44 @@
 ---
-interface Props {
-  initialQuery?: string;
-}
-
-const { initialQuery = '' } = Astro.props;
+// No props needed - will read from URL on client-side
 ---
 
-<form action="/search" method="get" class="search-bar">
+<form id="search-form" class="search-bar">
   <div class="search-input-wrapper">
     <svg class="search-icon" width="20" height="20" viewBox="0 0 20 20" fill="none">
       <path d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM18 18l-4.35-4.35" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
     <input
       type="text"
+      id="search-input"
       name="q"
       placeholder="Search movies by title, director, cast, or genre..."
-      value={initialQuery}
       class="search-input"
     />
     <button type="submit" class="search-button">Search</button>
   </div>
 </form>
+
+<script>
+  // Populate input from URL query on page load
+  const urlParams = new URLSearchParams(window.location.search);
+  const query = urlParams.get('q') || '';
+  const input = document.getElementById('search-input') as HTMLInputElement;
+  if (input && query) {
+    input.value = query;
+  }
+
+  // Handle form submission
+  document.getElementById('search-form')?.addEventListener('submit', function(e) {
+    e.preventDefault();
+    const query = input?.value.trim();
+    if (query) {
+      // Construct URL preserving current protocol, host, and port
+      const searchUrl = new URL('/search', window.location.origin);
+      searchUrl.searchParams.set('q', query);
+      window.location.href = searchUrl.href;
+    }
+  });
+</script>
 
 <style>
   .search-bar {

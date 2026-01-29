@@ -37,11 +37,37 @@ const formatDate = (date: Date) => {
 <BaseLayout
   title={`${movie.data.title} (${movie.data.releaseYear}) - FilmScanner`}
   description={movie.data.description}
+  image={movie.data.coverImage}
+  type="article"
 >
+  <!-- Schema.org JSON-LD markup for SEO -->
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "Movie",
+    "name": movie.data.title,
+    "image": movie.data.coverImage,
+    "description": movie.data.description,
+    "datePublished": movie.data.releaseYear?.toString(),
+    "aggregateRating": movie.data.rating ? {
+      "@type": "AggregateRating",
+      "ratingValue": movie.data.rating,
+      "bestRating": 10
+    } : undefined,
+    "director": movie.data.director ? {
+      "@type": "Person",
+      "name": movie.data.director
+    } : undefined,
+    "actor": movie.data.cast.map((actor: string) => ({
+      "@type": "Person",
+      "name": actor
+    })),
+    "genre": movie.data.genres
+  })} />
+
   <article class="movie-detail">
     {movie.data.backdropImage && (
       <div class="backdrop">
-        <img src={movie.data.backdropImage} alt={movie.data.title} />
+        <img src={movie.data.backdropImage} alt={movie.data.title} loading="lazy" onerror="this.style.display='none';" />
         <div class="backdrop-overlay"></div>
       </div>
     )}

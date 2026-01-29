@@ -11,7 +11,7 @@
 *.test
 *.out
 go.work
-scanner
+/scanner
 
 # Node.js / Astro
 node_modules/
