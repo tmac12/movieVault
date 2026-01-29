@@ -2478,7 +2478,7 @@ Let's set up your configuration.
 
 [1/5] TMDB API Key
 Enter your TMDB API key (get one from https://themoviedb.org):
-> 0ce53bddfcf59b8541480485423e2ec2
+> your_tmdb_api_key_here
 
 [2/5] Movie Directories
 Enter paths to scan (one per line, empty line to finish):
