@@ -91,7 +91,7 @@ func main() {
 	}
 
 	// Create TMDB client
-	tmdbClient := metadata.NewClient(cfg.TMDB.APIKey, cfg.Options.RateLimitDelay)
+	tmdbClient := metadata.NewClient(cfg.TMDB.APIKey, cfg.TMDB.Language, cfg.Options.RateLimitDelay)
 
 	// Create MDX writer
 	mdxWriter := writer.NewMDXWriter(cfg.Output.MDXDir, cfg.Output.CoversDir)

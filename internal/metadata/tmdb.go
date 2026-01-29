@@ -25,14 +25,19 @@ const (
 // Client represents a TMDB API client
 type Client struct {
 	apiKey     string
+	language   string
 	httpClient *http.Client
 	rateDelay  time.Duration
 }
 
 // NewClient creates a new TMDB API client
-func NewClient(apiKey string, rateLimitDelayMs int) *Client {
+func NewClient(apiKey string, language string, rateLimitDelayMs int) *Client {
+	if language == "" {
+		language = "en-US"
+	}
 	return &Client{
 		apiKey:     apiKey,
+		language:   language,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 		rateDelay:  time.Duration(rateLimitDelayMs) * time.Millisecond,
 	}
@@ -47,7 +52,7 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 	if year > 0 {
 		params.Set("year", strconv.Itoa(year))
 	}
-	params.Set("language", "en-US")
+	params.Set("language", c.language)
 	params.Set("page", "1")
 
 	// Make request
@@ -84,7 +89,7 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 	params := url.Values{}
 	params.Set("api_key", c.apiKey)
-	params.Set("language", "en-US")
+	params.Set("language", c.language)
 
 	detailsURL := fmt.Sprintf("%s/movie/%d?%s", tmdbAPIBaseURL, tmdbID, params.Encode())
 	resp, err := c.httpClient.Get(detailsURL)
@@ -113,7 +118,7 @@ func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 func (c *Client) GetMovieCredits(tmdbID int) (*TMDBCreditsResponse, error) {
 	params := url.Values{}
 	params.Set("api_key", c.apiKey)
-	params.Set("language", "en-US")
+	params.Set("language", c.language)
 
 	creditsURL := fmt.Sprintf("%s/movie/%d/credits?%s", tmdbAPIBaseURL, tmdbID, params.Encode())
 	resp, err := c.httpClient.Get(creditsURL)

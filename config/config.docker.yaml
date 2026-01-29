@@ -1,5 +1,6 @@
 tmdb:
   api_key: "${TMDB_API_KEY}"  # Injected from .env file
+  language: "en-US"  # Language for metadata (en-US, it-IT, es-ES, fr-FR, de-DE, ja-JP, etc.)
 
 scanner:
   directories:

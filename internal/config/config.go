@@ -18,7 +18,8 @@ type Config struct {
 
 // TMDBConfig holds TMDB API configuration
 type TMDBConfig struct {
-	APIKey string `yaml:"api_key"`
+	APIKey   string `yaml:"api_key"`
+	Language string `yaml:"language"`
 }
 
 // ScannerConfig holds scanner settings
@@ -74,6 +75,11 @@ func Load(path string) (*Config, error) {
 	// Validate required fields
 	if cfg.TMDB.APIKey == "" || cfg.TMDB.APIKey == "your_api_key_here" {
 		return nil, fmt.Errorf("TMDB API key is required. Get one from https://www.themoviedb.org/settings/api")
+	}
+
+	// Set default language if not specified
+	if cfg.TMDB.Language == "" {
+		cfg.TMDB.Language = "en-US"
 	}
 
 	if len(cfg.Scanner.Directories) == 0 {

@@ -1,5 +1,6 @@
 tmdb:
   api_key: "your_api_key_here"  # Get from https://www.themoviedb.org/settings/api
+  language: "en-US"  # Language for metadata (en-US, it-IT, es-ES, fr-FR, de-DE, ja-JP, etc.)
 
 scanner:
   directories:
