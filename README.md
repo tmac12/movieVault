@@ -28,10 +28,10 @@ Pre-built Docker images are available on GitHub Container Registry for faster de
 
 ```bash
 # Pull latest version
-docker pull ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
+docker pull ghcr.io/tmac12/movievault:latest
 
 # Pull specific version
-docker pull ghcr.io/YOUR_GITHUB_USERNAME/movievault:v1.2.0
+docker pull ghcr.io/tmac12/movievault:v1.2.0
 ```
 
 To use pre-built images, update your `docker-compose.yml`:
@@ -43,7 +43,7 @@ services:
     # build: .
 
     # Use published image instead:
-    image: ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
+    image: ghcr.io/tmac12/movievault:latest
 ```
 
 See [DOCKER_REGISTRY.md](DOCKER_REGISTRY.md) for complete publishing and usage instructions.
