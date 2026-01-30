@@ -22,6 +22,32 @@ A multimedia file scanner that discovers movie files, scrapes metadata from TMDB
 - **Styling**: Modern CSS with dark theme
 - **Deployment**: Docker or native (nginx/Apache/Caddy)
 
+## Using Pre-Built Images
+
+Pre-built Docker images are available on GitHub Container Registry for faster deployment:
+
+```bash
+# Pull latest version
+docker pull ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
+
+# Pull specific version
+docker pull ghcr.io/YOUR_GITHUB_USERNAME/movievault:v1.2.0
+```
+
+To use pre-built images, update your `docker-compose.yml`:
+
+```yaml
+services:
+  movievault:
+    # Comment out the build line:
+    # build: .
+
+    # Use published image instead:
+    image: ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
+```
+
+See [DOCKER_REGISTRY.md](DOCKER_REGISTRY.md) for complete publishing and usage instructions.
+
 ## Quick Start (Docker)
 
 ### Prerequisites
@@ -29,6 +55,8 @@ A multimedia file scanner that discovers movie files, scrapes metadata from TMDB
 - TMDB API key ([get one here](https://www.themoviedb.org/settings/api))
 
 ### Setup
+
+**Choose one:** Build locally OR use pre-built images (see above)
 
 1. Clone or setup the project:
 ```bash

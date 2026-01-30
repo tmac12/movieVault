@@ -2,7 +2,16 @@ version: '3.8'
 
 services:
   movievault:
+    # Option 1: Build locally (default)
     build: .
+
+    # Option 2: Use pre-built image from GitHub Container Registry
+    # Uncomment the line below and comment out "build: ." above
+    # See DOCKER_REGISTRY.md for setup instructions
+    # image: ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
+    # OR use a specific version:
+    # image: ghcr.io/YOUR_GITHUB_USERNAME/movievault:v1.2.0
+
     container_name: movievault
     ports:
       - "${WEB_PORT:-8080}:80"
@@ -32,6 +41,8 @@ services:
   # Uncomment if you want a dedicated scanner container
   # scanner:
   #   build: .
+  #   # OR use published image:
+  #   # image: ghcr.io/YOUR_GITHUB_USERNAME/movievault:latest
   #   container_name: movievault-scanner
   #   volumes:
   #     - /path/to/your/movies:/movies:ro
