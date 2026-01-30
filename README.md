@@ -48,6 +48,168 @@ services:
 
 See [DOCKER_REGISTRY.md](DOCKER_REGISTRY.md) for complete publishing and usage instructions.
 
+## Quick Start Without Cloning (Docker Image Only)
+
+You can use MovieVault with just the Docker image, without cloning the entire repository.
+
+### Option 1: Using `docker run` (Simplest)
+
+**Minimal setup with just environment variables:**
+
+```bash
+# Create directories for data
+mkdir -p ~/movievault-data/{movies,covers}
+
+# Run the container
+docker run -d \
+  --name movievault \
+  -p 8080:80 \
+  -v /path/to/your/movies:/movies:ro \
+  -v ~/movievault-data/movies:/data/movies \
+  -v ~/movievault-data/covers:/data/covers \
+  -e TMDB_API_KEY=your_tmdb_api_key_here \
+  -e AUTO_SCAN=true \
+  -e SCAN_INTERVAL=3600 \
+  ghcr.io/tmac12/movievault:latest
+```
+
+**Then access your collection:**
+```
+http://localhost:8080
+```
+
+**Configuration notes:**
+- `-v /path/to/your/movies:/movies:ro` - Mount your movie directory (read-only)
+- `-v ~/movievault-data/movies:/data/movies` - Stores generated MDX files
+- `-v ~/movievault-data/covers:/data/covers` - Stores downloaded images
+- `-e TMDB_API_KEY=...` - Your TMDB API key (required)
+- `-e AUTO_SCAN=true` - Automatically scan on startup
+- `-e SCAN_INTERVAL=3600` - Re-scan every hour (optional)
+
+### Option 2: Minimal docker-compose.yml
+
+**If you prefer docker-compose**, create just these two files:
+
+**1. Create `.env` file:**
+```env
+TMDB_API_KEY=your_actual_api_key_here
+AUTO_SCAN=true
+SCAN_INTERVAL=3600
+WEB_PORT=8080
+```
+
+**2. Create `docker-compose.yml` file:**
+```yaml
+services:
+  movievault:
+    image: ghcr.io/tmac12/movievault:latest
+    container_name: movievault
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      # Your movie directories (read-only)
+      - /path/to/your/movies:/movies:ro
+      - /path/to/external/drive:/movies2:ro
+
+      # Data persistence
+      - ./data/movies:/data/movies
+      - ./data/covers:/data/covers
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - AUTO_SCAN=${AUTO_SCAN:-true}
+      - SCAN_INTERVAL=${SCAN_INTERVAL:-3600}
+    restart: unless-stopped
+```
+
+**3. Start the container:**
+```bash
+docker-compose up -d
+```
+
+### Option 3: With Custom Configuration
+
+**For advanced configuration**, create a config file:
+
+**1. Download the config template:**
+```bash
+# Create config directory
+mkdir -p config
+
+# Create config file
+cat > config/config.docker.yaml << 'EOF'
+tmdb:
+  api_key: "${TMDB_API_KEY}"
+  language: "en-US"
+
+scanner:
+  directories:
+    - "/movies"
+    - "/movies2"
+  extensions:
+    - ".mkv"
+    - ".mp4"
+    - ".avi"
+    - ".mov"
+    - ".m4v"
+
+output:
+  mdx_dir: "/data/movies"
+  covers_dir: "/data/covers"
+  auto_build: true
+
+options:
+  rate_limit_delay: 250
+  download_covers: true
+  download_backdrops: true
+  use_nfo: true
+  nfo_fallback_tmdb: true
+EOF
+```
+
+**2. Update docker-compose.yml to use it:**
+```yaml
+services:
+  movievault:
+    image: ghcr.io/tmac12/movievault:latest
+    volumes:
+      - /path/to/movies:/movies:ro
+      - ./data:/data
+      - ./config/config.docker.yaml:/config/config.yaml:ro  # Add this
+    environment:
+      - TMDB_API_KEY=${TMDB_API_KEY}
+```
+
+### Managing the Container
+
+```bash
+# View logs
+docker logs -f movievault
+
+# Trigger manual scan
+docker exec movievault scanner
+
+# Force refresh all metadata
+docker exec movievault scanner --force-refresh
+
+# Stop the container
+docker stop movievault
+
+# Update to latest version
+docker pull ghcr.io/tmac12/movievault:latest
+docker stop movievault
+docker rm movievault
+# Then run the docker run command again
+```
+
+### Get Your TMDB API Key
+
+1. Create a free account at [themoviedb.org](https://www.themoviedb.org/signup)
+2. Go to [API Settings](https://www.themoviedb.org/settings/api)
+3. Request an API key (choose "Developer" option)
+4. Use the "API Key (v3 auth)" value
+
+---
+
 ## Quick Start (Docker)
 
 ### Prerequisites
