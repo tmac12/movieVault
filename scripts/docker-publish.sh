@@ -99,15 +99,20 @@ if ! docker buildx version &>/dev/null; then
     exit 1
 fi
 
-# Check authentication
+# Check authentication (best effort - not blocking)
 echo -e "${YELLOW}Checking authentication...${NC}"
-if ! docker info 2>/dev/null | grep -q "${REGISTRY}"; then
-    echo -e "${RED}✗ Not authenticated with ${REGISTRY}${NC}"
+
+# Check if ghcr.io credentials exist in Docker config
+if [ -f ~/.docker/config.json ] && grep -q "ghcr.io" ~/.docker/config.json 2>/dev/null; then
+    echo -e "${GREEN}✓ Authenticated with ${REGISTRY}${NC}"
+else
+    # Credentials might be stored in a credential helper (common on Linux)
+    # Examples: docker-credential-pass, docker-credential-secretservice
+    echo -e "${YELLOW}⚠ Could not detect credentials in ~/.docker/config.json${NC}"
+    echo -e "  ${YELLOW}(Credentials may be stored in a credential helper - this is OK)${NC}"
     echo ""
-    echo "Please run: ./scripts/docker-login-ghcr.sh"
-    exit 1
+    echo "If authentication fails during push, run: ./scripts/docker-login-ghcr.sh"
 fi
-echo -e "${GREEN}✓ Authenticated${NC}"
 echo ""
 
 # Create/use buildx builder
