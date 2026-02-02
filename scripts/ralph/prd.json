@@ -191,8 +191,8 @@
         "Typecheck passes"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Expanded codecPattern regex in internal/scanner/patterns.go to include all required codec markers: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX, 10bit, HDR, HDR10, DV. Pattern already had most codecs; added 10bit, HDR10, HDR, and DV. HDR10 placed before HDR to ensure longest match. Pattern is case-insensitive via (?i) flag. Go build/vet pass. Website has no typecheck/test scripts configured."
     },
     {
       "id": "US-013",

@@ -15,7 +15,9 @@ var (
 	// Source/quality markers (kept separate from resolution) (US-011)
 	// Includes: BluRay, BRRip, WEB-DL, WEBRip, HDRip, DVDRip, HDTV, BDRip, WEB, AMZN, NF
 	qualityPattern = regexp.MustCompile(`(?i)\b(BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF)\b`)
-	codecPattern   = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC)\b`)
+	// Codec markers (US-012)
+	// Includes: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX, 10bit, HDR, HDR10, DV
+	codecPattern = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC|10bit|HDR10|HDR|DV)\b`)
 	audioPattern        = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC)\b`)
 	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)
 	subtitlePattern     = regexp.MustCompile(`(?i)\b(sub|subs|subtitle|subtitles|subbed)\b`)

@@ -359,3 +359,40 @@
 - The codecPattern already exists but should be verified against US-012 requirements
 - Keep pattern ordering: resolution → year → quality → codec → audio → etc.
 
+## 2026-02-02: US-012 - Title extraction - remove codec markers
+
+### What was done:
+- Expanded `codecPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC`
+  - New pattern: `x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC|10bit|HDR10|HDR|DV`
+  - Added missing markers: 10bit, HDR, HDR10, DV (Dolby Vision)
+  - Existing pattern already covered: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX
+- Pattern ordering: `HDR10` placed before `HDR` to ensure longest match first
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-012 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded codecPattern with additional codec markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.x264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.x265.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HEVC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.H.264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.H264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.10bit.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HDR.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HDR10.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DV.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-013 (Title extraction - remove audio markers) is the next logical step
+- The audioPattern already exists and should be verified against US-013 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+
