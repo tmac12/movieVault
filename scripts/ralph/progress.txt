@@ -854,3 +854,68 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - US-024 adds --find-duplicates flag to scanner
 - The `isHiddenFile()` and `normalizeEventPath()` helpers remain available for future use
 
+## 2026-02-02: US-024 - Implement basic duplicate detection
+
+### What was done:
+- Created `internal/scanner/duplicates.go` with duplicate detection logic:
+  - `DuplicateFinder` struct with `NewDuplicateFinder(mdxDir string)` constructor
+  - `FindDuplicates() ([]DuplicateSet, error)` - scans all MDX files and returns groups of duplicates
+  - `DuplicateSet` struct containing grouping key, key type (tmdb_id or title_year), and list of movies
+  - `DuplicateMovie` struct with title, year, TMDB ID, file path, file name, slug, MDX path
+  - `readAllMDXFiles()` - reads all .mdx files and extracts YAML frontmatter
+  - `parseMDXFile()` - extracts frontmatter from a single MDX file
+  - `PrintDuplicateReport()` - outputs formatted report with duplicate sets
+- Added `--find-duplicates` flag to `cmd/scanner/main.go`
+- Added `runFindDuplicates()` function that:
+  - Loads configuration to get MDX directory
+  - Creates DuplicateFinder and calls FindDuplicates()
+  - Prints formatted report using PrintDuplicateReport()
+  - Returns exit code equal to count of duplicate sets found
+
+### Grouping logic:
+- Movies with TMDB ID > 0 are grouped by TMDB ID
+- Movies without TMDB ID are grouped by lowercase title + year
+- Only groups with more than 1 movie are returned as duplicates
+
+### Report output format:
+```
+Found N duplicate set(s):
+
+━━━ Duplicate Set 1 ━━━
+TMDB ID: 12345
+Copies: 2
+
+  [1] Movie Title (2020)
+      File: movie.mkv
+      Path: /path/to/movie.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+```
+
+### Files created:
+- `internal/scanner/duplicates.go` - Duplicate detection implementation
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --find-duplicates flag and runFindDuplicates() function
+
+### Usage:
+```bash
+# Find duplicates in library
+./scanner --find-duplicates
+
+# With custom config
+./scanner --find-duplicates --config /path/to/config.yaml
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (17 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-025 (Add quality comparison to duplicate detection) is the next logical step
+- US-025 will add quality ranking to help users decide which duplicate to keep
+- The DuplicateMovie struct can be extended with quality fields for US-025
+- Consider adding SourceFilePath field from original video file in future
+

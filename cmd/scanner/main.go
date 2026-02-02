@@ -24,14 +24,15 @@ import (
 )
 
 var (
-	configPath   = flag.String("config", "./config/config.yaml", "Path to configuration file")
-	forceRefresh = flag.Bool("force-refresh", false, "Re-fetch all metadata from TMDB even for existing MDX files")
-	noBuild      = flag.Bool("no-build", false, "Skip Astro build step")
-	dryRun       = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
-	verbose      = flag.Bool("verbose", false, "Show detailed logging")
-	clearCache   = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
-	testParser   = flag.Bool("test-parser", false, "Test title extraction without running full scan")
-	watchMode    = flag.Bool("watch", false, "Watch directories for new files and process automatically")
+	configPath     = flag.String("config", "./config/config.yaml", "Path to configuration file")
+	forceRefresh   = flag.Bool("force-refresh", false, "Re-fetch all metadata from TMDB even for existing MDX files")
+	noBuild        = flag.Bool("no-build", false, "Skip Astro build step")
+	dryRun         = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
+	verbose        = flag.Bool("verbose", false, "Show detailed logging")
+	clearCache     = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
+	testParser     = flag.Bool("test-parser", false, "Test title extraction without running full scan")
+	watchMode      = flag.Bool("watch", false, "Watch directories for new files and process automatically")
+	findDuplicates = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
 )
 
 func main() {
@@ -40,6 +41,12 @@ func main() {
 	// Handle --test-parser flag (US-017)
 	if *testParser {
 		exitCode := runTestParser()
+		os.Exit(exitCode)
+	}
+
+	// Handle --find-duplicates flag (US-024)
+	if *findDuplicates {
+		exitCode := runFindDuplicates()
 		os.Exit(exitCode)
 	}
 
@@ -644,6 +651,30 @@ func runTestParser() int {
 		return 1
 	}
 	return 0
+}
+
+// runFindDuplicates scans MDX files and reports duplicate movies (US-024)
+// Returns exit code: count of duplicate sets found (0 if no duplicates)
+func runFindDuplicates() int {
+	// Load configuration to get MDX directory
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to load config: %v\n", err)
+		return 1
+	}
+
+	finder := scanner.NewDuplicateFinder(cfg.Output.MDXDir)
+	duplicates, err := finder.FindDuplicates()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to find duplicates: %v\n", err)
+		return 1
+	}
+
+	// Print report
+	scanner.PrintDuplicateReport(duplicates)
+
+	// Exit with count of duplicate sets
+	return len(duplicates)
 }
 
 // detectPatternsMatched returns a comma-separated list of pattern categories that matched

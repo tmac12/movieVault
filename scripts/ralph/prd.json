@@ -380,8 +380,8 @@
         "Typecheck passes"
       ],
       "priority": 24,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Created internal/scanner/duplicates.go with DuplicateFinder struct. Added --find-duplicates flag to scanner CLI. Scans all MDX files, parses YAML frontmatter, groups by TMDB ID (or title+year for movies without TMDB ID). PrintDuplicateReport() outputs formatted report listing all duplicate sets with file paths, TMDB links, etc. Exit code equals count of duplicate sets found."
     },
     {
       "id": "US-025",
