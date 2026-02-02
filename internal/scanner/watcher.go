@@ -175,7 +175,7 @@ func (w *Watcher) processEvents() {
 func (w *Watcher) handleEvent(event fsnotify.Event) {
 	path := event.Name
 
-	// Handle directory creation (for recursive watching)
+	// Handle directory events
 	if event.Has(fsnotify.Create) {
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
 			if w.recursive && !w.scanner.IsExcludedDir(path) {
@@ -189,9 +189,51 @@ func (w *Watcher) handleEvent(event fsnotify.Event) {
 		}
 	}
 
+	// Handle directory removal
+	if event.Has(fsnotify.Remove) {
+		// Check if this might be a directory we were watching
+		// fsnotify auto-removes deleted directories from watch list
+		// but we should log this for visibility
+		if w.wasWatchedDirectory(path) {
+			slog.Info("watched directory removed", "path", path)
+		}
+	}
+
 	// Only process files with matching extensions
 	filename := filepath.Base(path)
 	if !w.scanner.IsMediaFile(filename) {
+		return
+	}
+
+	// Handle file deletion - log warning but don't delete MDX (US-023)
+	if event.Has(fsnotify.Remove) {
+		slog.Warn("media file deleted",
+			"file", filename,
+			"path", path,
+			"note", "MDX file not deleted - manual cleanup may be needed",
+		)
+		// Cancel any pending processing for this file
+		w.cancelPending(path)
+		return
+	}
+
+	// Handle file rename/move events (US-023)
+	// fsnotify sends Rename for both the old path (file disappearing) and sometimes
+	// Create for the new path (file appearing). On some systems, only Rename is sent.
+	if event.Has(fsnotify.Rename) {
+		slog.Info("media file renamed/moved",
+			"file", filename,
+			"path", path,
+			"note", "file may have been moved out of watched directory",
+		)
+		// Cancel any pending processing for the old path
+		w.cancelPending(path)
+
+		// Check if the file still exists at this path (it usually won't after rename)
+		// The new location, if within watched dirs, will trigger a Create event
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			slog.Debug("file no longer at original path after rename", "path", path)
+		}
 		return
 	}
 
@@ -284,6 +326,31 @@ func (w *Watcher) processFile(path string) {
 // IsValidMediaFile checks if a path is a valid media file for the configured extensions
 func (w *Watcher) IsValidMediaFile(path string) bool {
 	return w.scanner.IsMediaFile(filepath.Base(path))
+}
+
+// cancelPending cancels any pending processing for a file path (US-023)
+func (w *Watcher) cancelPending(path string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if timer, exists := w.pendingTimers[path]; exists {
+		timer.Stop()
+		delete(w.pendingTimers, path)
+		delete(w.pendingFiles, path)
+		slog.Debug("cancelled pending processing", "path", path)
+	}
+}
+
+// wasWatchedDirectory checks if a path might have been a watched directory
+// This is a heuristic since we can't query fsnotify for its watch list
+func (w *Watcher) wasWatchedDirectory(path string) bool {
+	// Check if it's under one of our root directories
+	for _, dir := range w.directories {
+		if strings.HasPrefix(path, dir) {
+			return true
+		}
+	}
+	return false
 }
 
 // normalizeEventPath normalizes a path from fsnotify events

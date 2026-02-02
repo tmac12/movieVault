@@ -363,8 +363,8 @@
         "Typecheck passes"
       ],
       "priority": 23,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added handling for Rename and Remove events in watcher.go. Rename events cancel pending processing and log that file was moved. Remove events log warning with note that MDX is not deleted. Added cancelPending() helper to cancel debounced processing when file is moved/deleted. Added wasWatchedDirectory() helper to detect when watched directories are removed. Recursive watching was already implemented in US-022."
     },
     {
       "id": "US-024",

@@ -815,3 +815,42 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - Current behavior logs warning for deletions but doesn't delete MDX (as specified)
 - The `isHiddenFile()` and `normalizeEventPath()` helpers are defined but not yet used (for future use in US-023)
 
+## 2026-02-02: US-023 - Handle watch folder file events
+
+### What was done:
+- Enhanced `handleEvent()` in `internal/scanner/watcher.go` to handle additional fsnotify events:
+  - **Remove events**: Logs warning when media file is deleted, notes that MDX is not deleted
+  - **Rename events**: Logs info when media file is renamed/moved, cancels pending processing
+  - **Directory removal**: Detects when watched directories are removed and logs appropriately
+- Added `cancelPending(path string)` helper method:
+  - Cancels any pending debounced processing for a file path
+  - Stops timer, removes from pendingFiles and pendingTimers maps
+  - Called when file is moved or deleted to prevent processing stale paths
+- Added `wasWatchedDirectory(path string) bool` helper method:
+  - Heuristic check if a path was under one of our watched root directories
+  - Used to provide useful logging when directories are removed
+- Debouncing for rapid successive events was already implemented in US-022
+- Recursive watching was already implemented in US-022
+
+### Files modified:
+- `internal/scanner/watcher.go` - Enhanced handleEvent(), added cancelPending(), wasWatchedDirectory()
+
+### Event handling behavior:
+- **Create/Write**: Schedule processing with debounce (unchanged from US-022)
+- **Rename**: Log the event, cancel pending processing (file may have moved out)
+- **Remove**: Log warning that MDX won't be deleted, cancel pending processing
+- **Directory Create**: Add to watch list if recursive (unchanged from US-022)
+- **Directory Remove**: Log that directory was removed (fsnotify auto-removes from watch list)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-024 (Implement basic duplicate detection) is the next logical step
+- US-024 is an independent feature - creates internal/scanner/duplicates.go
+- US-024 adds --find-duplicates flag to scanner
+- The `isHiddenFile()` and `normalizeEventPath()` helpers remain available for future use
+
