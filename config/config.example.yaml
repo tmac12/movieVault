@@ -27,3 +27,7 @@ options:
   download_backdrops: true  # Download backdrop images
   use_nfo: true  # Enable .nfo file parsing for metadata
   nfo_fallback_tmdb: true  # Fall back to TMDB if .nfo is missing or incomplete
+
+retry:
+  max_attempts: 3         # Maximum number of retry attempts for transient API errors
+  initial_backoff_ms: 1000  # Initial backoff delay in milliseconds (doubles each retry)

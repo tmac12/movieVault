@@ -84,3 +84,30 @@
 - The retry package uses error string matching for HTTP status codes since TMDB client wraps errors with fmt.Errorf
 - Consider adding structured error types in future for better error classification
 
+## 2026-02-02: US-004 - Add retry config options
+
+### What was done:
+- Added `RetryConfig` struct to `internal/config/config.go` with two fields:
+  - `MaxAttempts int` (yaml: `max_attempts`)
+  - `InitialBackoffMs int` (yaml: `initial_backoff_ms`)
+- Added `Retry` field to main `Config` struct
+- Added default values in `Load()` function:
+  - `MaxAttempts` defaults to 3
+  - `InitialBackoffMs` defaults to 1000
+- Updated `config/config.example.yaml` with retry section and descriptive comments
+
+### Files modified:
+- `internal/config/config.go` - Added RetryConfig struct and defaults
+- `config/config.example.yaml` - Added retry section with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-005 (Integrate retry logic into TMDB client) is the next logical step
+- The config values can be accessed via `cfg.Retry.MaxAttempts` and `cfg.Retry.InitialBackoffMs`
+- Convert `InitialBackoffMs` to `time.Duration` when passing to retry.Retry(): `time.Duration(cfg.Retry.InitialBackoffMs) * time.Millisecond`
+- The TMDB client will need to accept config or retry parameters to use these values
+

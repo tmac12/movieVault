@@ -14,6 +14,7 @@ type Config struct {
 	Scanner ScannerConfig `yaml:"scanner"`
 	Output  OutputConfig  `yaml:"output"`
 	Options OptionsConfig `yaml:"options"`
+	Retry   RetryConfig   `yaml:"retry"`
 }
 
 // TMDBConfig holds TMDB API configuration
@@ -45,6 +46,12 @@ type OptionsConfig struct {
 	DownloadBackdrops bool `yaml:"download_backdrops"`
 	UseNFO            bool `yaml:"use_nfo"`
 	NFOFallbackTMDB   bool `yaml:"nfo_fallback_tmdb"`
+}
+
+// RetryConfig holds retry behavior configuration
+type RetryConfig struct {
+	MaxAttempts      int `yaml:"max_attempts"`
+	InitialBackoffMs int `yaml:"initial_backoff_ms"`
 }
 
 // Load reads and parses the configuration file
@@ -81,6 +88,14 @@ func Load(path string) (*Config, error) {
 	// Set default language if not specified
 	if cfg.TMDB.Language == "" {
 		cfg.TMDB.Language = "en-US"
+	}
+
+	// Set default retry settings
+	if cfg.Retry.MaxAttempts == 0 {
+		cfg.Retry.MaxAttempts = 3
+	}
+	if cfg.Retry.InitialBackoffMs == 0 {
+		cfg.Retry.InitialBackoffMs = 1000
 	}
 
 	if len(cfg.Scanner.Directories) == 0 {
