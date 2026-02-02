@@ -213,3 +213,44 @@
 - The default behavior enables caching - users must explicitly set `enabled: false` to disable
 - If user provides cache section with `enabled: false` and custom path, that is respected
 
+## 2026-02-02: US-008 - Integrate cache into TMDB client
+
+### What was done:
+- Added cache integration to TMDB client (`internal/metadata/tmdb.go`):
+  - Added `CacheLogFunc` type for verbose logging of cache operations
+  - Added cache-related fields to `Client` struct: `cache`, `cacheTTL`, `cacheLogFunc`, `forceRefresh`
+  - Added cache-related fields to `ClientConfig`: `Cache`, `CacheTTLDays`, `CacheLogFunc`, `ForceRefresh`
+  - Added `getFromCache(key string)` helper that checks cache (respects forceRefresh flag)
+  - Added `setToCache(key string, data []byte)` helper that stores data in cache
+  - Integrated cache into `SearchMovie()` with key format `tmdb:search:{title}:{year}`
+  - Integrated cache into `GetMovieDetails()` with key format `tmdb:movie:{tmdbID}`
+  - Integrated cache into `GetMovieCredits()` with key format `tmdb:credits:{tmdbID}`
+- Updated `cmd/scanner/main.go`:
+  - Initialize SQLiteCache when `cfg.Cache.Enabled` is true
+  - Added `cacheLogFunc` callback for verbose logging (hit/miss/store operations)
+  - Pass cache, TTL, log func, and forceRefresh flag to TMDB client via `ClientConfig`
+  - Properly close cache on exit via `defer tmdbCache.Close()`
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added cache integration with helper methods and updated API methods
+- `cmd/scanner/main.go` - Initialize cache, pass to TMDB client, add verbose logging
+
+### Cache key format:
+- Search: `tmdb:search:{title}:{year}` (e.g., `tmdb:search:The Matrix:1999`)
+- Movie details: `tmdb:movie:{tmdbID}` (e.g., `tmdb:movie:603`)
+- Credits: `tmdb:credits:{tmdbID}` (e.g., `tmdb:credits:603`)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-009 (Add --clear-cache CLI flag) is the next logical step
+- The cache is skipped when `--force-refresh` flag is used (set via `ForceRefresh` in ClientConfig)
+- Cache operations are logged in verbose mode (--verbose flag) via the CacheLogFunc callback
+- The cache TTL is converted from days to `time.Duration` in `NewClientWithConfig()`
+- If cache initialization fails, the scanner exits with error code 1
+- Image downloads (DownloadImage) are NOT cached since they go directly to files
+

@@ -12,6 +12,7 @@ import (
 
 	"github.com/marco/movieVault/internal/config"
 	"github.com/marco/movieVault/internal/metadata"
+	"github.com/marco/movieVault/internal/metadata/cache"
 	"github.com/marco/movieVault/internal/metadata/nfo"
 	"github.com/marco/movieVault/internal/scanner"
 	"github.com/marco/movieVault/internal/writer"
@@ -116,8 +117,22 @@ func main() {
 		return
 	}
 
-	// Create TMDB client with retry configuration
+	// Initialize cache if enabled
+	var tmdbCache cache.Cache
+	if cfg.Cache.Enabled {
+		var err error
+		tmdbCache, err = cache.NewSQLiteCache(cfg.Cache.Path)
+		if err != nil {
+			slog.Error("failed to initialize cache", "path", cfg.Cache.Path, "error", err)
+			os.Exit(1)
+		}
+		defer tmdbCache.Close()
+		slog.Info("cache initialized", "path", cfg.Cache.Path, "ttl_days", cfg.Cache.TTLDays)
+	}
+
+	// Create TMDB client with retry and cache configuration
 	var retryLogFunc metadata.RetryLogFunc
+	var cacheLogFunc metadata.CacheLogFunc
 	if *verbose {
 		retryLogFunc = func(attempt int, maxAttempts int, backoff time.Duration, err error) {
 			slog.Debug("retrying tmdb request",
@@ -127,6 +142,20 @@ func main() {
 				"error", err.Error(),
 			)
 		}
+		cacheLogFunc = func(operation string, key string, hit bool) {
+			switch operation {
+			case "get":
+				if hit {
+					slog.Debug("cache hit", "key", key)
+				} else {
+					slog.Debug("cache miss", "key", key)
+				}
+			case "set":
+				slog.Debug("cache store", "key", key)
+			case "set_error":
+				slog.Warn("cache store failed", "key", key)
+			}
+		}
 	}
 	tmdbClient := metadata.NewClientWithConfig(metadata.ClientConfig{
 		APIKey:           cfg.TMDB.APIKey,
@@ -135,6 +164,10 @@ func main() {
 		MaxAttempts:      cfg.Retry.MaxAttempts,
 		InitialBackoffMs: cfg.Retry.InitialBackoffMs,
 		RetryLogFunc:     retryLogFunc,
+		Cache:            tmdbCache,
+		CacheTTLDays:     cfg.Cache.TTLDays,
+		CacheLogFunc:     cacheLogFunc,
+		ForceRefresh:     *forceRefresh,
 	})
 
 	// Create MDX writer

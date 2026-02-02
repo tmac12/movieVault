@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marco/movieVault/internal/metadata/cache"
 	"github.com/marco/movieVault/internal/retry"
 	"github.com/marco/movieVault/internal/writer"
 )
@@ -26,6 +27,9 @@ const (
 // RetryLogFunc is a callback for logging retry attempts
 type RetryLogFunc func(attempt int, maxAttempts int, backoff time.Duration, err error)
 
+// CacheLogFunc is a callback for logging cache operations
+type CacheLogFunc func(operation string, key string, hit bool)
+
 // Client represents a TMDB API client
 type Client struct {
 	apiKey         string
@@ -35,6 +39,10 @@ type Client struct {
 	maxAttempts    int
 	initialBackoff time.Duration
 	retryLogFunc   RetryLogFunc
+	cache          cache.Cache
+	cacheTTL       time.Duration
+	cacheLogFunc   CacheLogFunc
+	forceRefresh   bool
 }
 
 // ClientConfig holds configuration for the TMDB client
@@ -45,6 +53,10 @@ type ClientConfig struct {
 	MaxAttempts      int
 	InitialBackoffMs int
 	RetryLogFunc     RetryLogFunc
+	Cache            cache.Cache
+	CacheTTLDays     int
+	CacheLogFunc     CacheLogFunc
+	ForceRefresh     bool
 }
 
 // NewClient creates a new TMDB API client
@@ -69,6 +81,9 @@ func NewClientWithConfig(cfg ClientConfig) *Client {
 	if cfg.InitialBackoffMs <= 0 {
 		cfg.InitialBackoffMs = 1000
 	}
+	if cfg.CacheTTLDays <= 0 {
+		cfg.CacheTTLDays = 30
+	}
 	return &Client{
 		apiKey:         cfg.APIKey,
 		language:       cfg.Language,
@@ -77,6 +92,10 @@ func NewClientWithConfig(cfg ClientConfig) *Client {
 		maxAttempts:    cfg.MaxAttempts,
 		initialBackoff: time.Duration(cfg.InitialBackoffMs) * time.Millisecond,
 		retryLogFunc:   cfg.RetryLogFunc,
+		cache:          cfg.Cache,
+		cacheTTL:       time.Duration(cfg.CacheTTLDays) * 24 * time.Hour,
+		cacheLogFunc:   cfg.CacheLogFunc,
+		forceRefresh:   cfg.ForceRefresh,
 	}
 }
 
@@ -129,8 +148,46 @@ func (c *Client) doRequestWithRetry(requestURL string) (*http.Response, error) {
 	return resp, nil
 }
 
+// getFromCache retrieves data from cache if available and not force-refreshing
+func (c *Client) getFromCache(key string) ([]byte, bool) {
+	if c.cache == nil || c.forceRefresh {
+		return nil, false
+	}
+	data, found := c.cache.Get(key)
+	if c.cacheLogFunc != nil {
+		c.cacheLogFunc("get", key, found)
+	}
+	return data, found
+}
+
+// setToCache stores data in cache if caching is enabled
+func (c *Client) setToCache(key string, data []byte) {
+	if c.cache == nil {
+		return
+	}
+	if err := c.cache.Set(key, data, c.cacheTTL); err != nil {
+		// Log error but don't fail the operation
+		if c.cacheLogFunc != nil {
+			c.cacheLogFunc("set_error", key, false)
+		}
+	} else if c.cacheLogFunc != nil {
+		c.cacheLogFunc("set", key, true)
+	}
+}
+
 // SearchMovie searches for a movie by title and optional year
 func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
+	// Build cache key
+	cacheKey := fmt.Sprintf("tmdb:search:%s:%d", title, year)
+
+	// Check cache first
+	if cachedData, found := c.getFromCache(cacheKey); found {
+		var cachedResult TMDBMovie
+		if err := json.Unmarshal(cachedData, &cachedResult); err == nil {
+			return &cachedResult, nil
+		}
+	}
+
 	// Build query parameters
 	params := url.Values{}
 	params.Set("api_key", c.apiKey)
@@ -165,6 +222,11 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 		return nil, fmt.Errorf("no results found for '%s'", title)
 	}
 
+	// Cache the result
+	if resultData, err := json.Marshal(searchResp.Results[0]); err == nil {
+		c.setToCache(cacheKey, resultData)
+	}
+
 	// Rate limiting
 	time.Sleep(c.rateDelay)
 
@@ -173,6 +235,17 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 
 // GetMovieDetails fetches detailed information about a movie
 func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
+	// Build cache key
+	cacheKey := fmt.Sprintf("tmdb:movie:%d", tmdbID)
+
+	// Check cache first
+	if cachedData, found := c.getFromCache(cacheKey); found {
+		var cachedResult TMDBMovieDetails
+		if err := json.Unmarshal(cachedData, &cachedResult); err == nil {
+			return &cachedResult, nil
+		}
+	}
+
 	params := url.Values{}
 	params.Set("api_key", c.apiKey)
 	params.Set("language", c.language)
@@ -194,6 +267,11 @@ func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 		return nil, fmt.Errorf("failed to decode movie details: %w", err)
 	}
 
+	// Cache the result
+	if resultData, err := json.Marshal(details); err == nil {
+		c.setToCache(cacheKey, resultData)
+	}
+
 	// Rate limiting
 	time.Sleep(c.rateDelay)
 
@@ -202,6 +280,17 @@ func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 
 // GetMovieCredits fetches cast and crew information
 func (c *Client) GetMovieCredits(tmdbID int) (*TMDBCreditsResponse, error) {
+	// Build cache key
+	cacheKey := fmt.Sprintf("tmdb:credits:%d", tmdbID)
+
+	// Check cache first
+	if cachedData, found := c.getFromCache(cacheKey); found {
+		var cachedResult TMDBCreditsResponse
+		if err := json.Unmarshal(cachedData, &cachedResult); err == nil {
+			return &cachedResult, nil
+		}
+	}
+
 	params := url.Values{}
 	params.Set("api_key", c.apiKey)
 	params.Set("language", c.language)
@@ -221,6 +310,11 @@ func (c *Client) GetMovieCredits(tmdbID int) (*TMDBCreditsResponse, error) {
 	var credits TMDBCreditsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&credits); err != nil {
 		return nil, fmt.Errorf("failed to decode credits: %w", err)
+	}
+
+	// Cache the result
+	if resultData, err := json.Marshal(credits); err == nil {
+		c.setToCache(cacheKey, resultData)
 	}
 
 	// Rate limiting

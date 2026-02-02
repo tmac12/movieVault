@@ -131,8 +131,8 @@
         "Typecheck passes"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added cache integration to TMDB client. SearchMovie uses key tmdb:search:{title}:{year}, GetMovieDetails uses tmdb:movie:{id}, GetMovieCredits uses tmdb:credits:{id}. Cache is checked before API calls via getFromCache() helper. Results stored via setToCache() helper. ForceRefresh flag in ClientConfig bypasses cache reads. Verbose mode logs cache hit/miss/store operations via CacheLogFunc callback. Scanner initializes SQLiteCache from config and passes to client."
     },
     {
       "id": "US-009",
