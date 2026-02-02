@@ -102,7 +102,7 @@ func main() {
 	slog.Info("processing files", "count", len(filesToProcess))
 
 	if *dryRun {
-		fmt.Println("\nDRY RUN MODE - No actual changes will be made\n")
+		fmt.Println("\nDRY RUN MODE - No actual changes will be made")
 		for _, file := range filesToProcess {
 			fmt.Printf("Would process: %s\n", file.FileName)
 			fmt.Printf("  Title: %s\n", file.Title)

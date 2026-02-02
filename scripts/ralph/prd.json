@@ -1,0 +1,453 @@
+{
+  "project": "MovieVault",
+  "branchName": "ralph/v1.2-scanner-overhaul",
+  "description": "v1.2 Scanner Overhaul - Improve metadata accuracy with direct TMDB lookups, better title extraction, local caching, watch folders, and duplicate detection",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Add GetMovieByID method to TMDB client",
+      "description": "As a developer, I need a method to fetch movie details directly by TMDB ID so that we can bypass search when NFO contains the ID.",
+      "acceptanceCriteria": [
+        "Add GetMovieByID(tmdbID int) (*Movie, error) method to internal/metadata/tmdb.go",
+        "Method calls TMDB /movie/{id} endpoint directly",
+        "Method fetches credits (cast/director) in same call or subsequent call",
+        "Returns populated Movie struct matching existing GetFullMovieData output",
+        "Returns appropriate error for 404 (not found) responses",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented GetMovieByID method in internal/metadata/tmdb.go. Added ErrMovieNotFound sentinel error for 404 handling."
+    },
+    {
+      "id": "US-002",
+      "title": "Use TMDB ID from NFO for direct lookup",
+      "description": "As a user with NFO files containing TMDB IDs, I want the scanner to use direct API lookups instead of title searches for 100% accurate matches.",
+      "acceptanceCriteria": [
+        "In cmd/scanner/main.go, check if parsed NFO contains TMDBID > 0",
+        "When TMDBID present, call GetMovieByID instead of GetFullMovieData",
+        "If GetMovieByID returns 404 error, fall back to title/year search",
+        "If TMDBID is 0 or missing, use existing title/year search behavior",
+        "Log which lookup method was used in verbose mode",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Add retry package with exponential backoff",
+      "description": "As a developer, I need a reusable retry utility so that transient API errors are handled automatically.",
+      "acceptanceCriteria": [
+        "Create internal/retry/retry.go package",
+        "Implement Retry(fn func() error, maxAttempts int, initialBackoff time.Duration) error",
+        "Backoff doubles after each failed attempt",
+        "Add IsRetryable(err error) bool helper that returns true for timeouts and 5xx errors",
+        "Add IsRateLimited(err error) bool helper that returns true for 429 errors",
+        "Non-retryable errors (401, 404) return immediately without retry",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Add retry config options",
+      "description": "As a user, I want to configure retry behavior so I can tune it for my network conditions.",
+      "acceptanceCriteria": [
+        "Add retry section to internal/config/config.go struct",
+        "Fields: MaxAttempts int, InitialBackoffMs int",
+        "Default MaxAttempts: 3",
+        "Default InitialBackoffMs: 1000",
+        "Update config.yaml.example with retry section and comments",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Integrate retry logic into TMDB client",
+      "description": "As a user, I want TMDB API calls to automatically retry on transient failures.",
+      "acceptanceCriteria": [
+        "Wrap HTTP calls in TMDB client with retry logic",
+        "Use retry config values from loaded configuration",
+        "Log retry attempts with attempt number and backoff duration in verbose mode",
+        "Rate limit errors (429) use longer backoff (double the normal)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Create SQLite cache package",
+      "description": "As a developer, I need a cache storage layer so that TMDB responses can be persisted locally.",
+      "acceptanceCriteria": [
+        "Create internal/metadata/cache/cache.go with Cache interface",
+        "Create internal/metadata/cache/sqlite.go implementing SQLite storage",
+        "Schema: id, cache_key (unique), response_json, cached_at, expires_at",
+        "Implement Get(key string) ([]byte, bool) method",
+        "Implement Set(key string, data []byte, ttl time.Duration) error method",
+        "Implement Clear() error method to purge all entries",
+        "Auto-create database file and table on first use",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-007",
+      "title": "Add cache config options",
+      "description": "As a user, I want to configure caching behavior including path and TTL.",
+      "acceptanceCriteria": [
+        "Add cache section to internal/config/config.go struct",
+        "Fields: Enabled bool, Path string, TTLDays int",
+        "Default Enabled: true",
+        "Default Path: ./data/cache.db",
+        "Default TTLDays: 30",
+        "Update config.yaml.example with cache section and comments",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-008",
+      "title": "Integrate cache into TMDB client",
+      "description": "As a user, I want TMDB responses cached locally so re-scans are faster.",
+      "acceptanceCriteria": [
+        "Check cache before making TMDB API calls",
+        "Cache key format: tmdb:{method}:{params} (e.g., tmdb:movie:12345)",
+        "Store successful responses in cache after API call",
+        "Skip cache when --force-refresh flag is used",
+        "Log cache hit/miss in verbose mode",
+        "Typecheck passes"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-009",
+      "title": "Add --clear-cache CLI flag",
+      "description": "As a user, I want to clear the metadata cache when needed.",
+      "acceptanceCriteria": [
+        "Add --clear-cache flag to cmd/scanner/main.go",
+        "When flag is set, call cache.Clear() and exit",
+        "Print confirmation message with number of entries cleared if possible",
+        "Exit with code 0 on success, non-zero on error",
+        "Typecheck passes"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-010",
+      "title": "Title extraction - remove resolution markers",
+      "description": "As a user, I want resolution markers removed from filenames for accurate title extraction.",
+      "acceptanceCriteria": [
+        "Update internal/scanner/patterns.go with resolution patterns",
+        "Remove: 1080p, 720p, 2160p, 4K, 480p, 1080i, 720i",
+        "Patterns are case-insensitive",
+        "Test: 'Movie.2020.1080p.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-011",
+      "title": "Title extraction - remove source markers",
+      "description": "As a user, I want source/quality markers removed from filenames.",
+      "acceptanceCriteria": [
+        "Add source patterns to internal/scanner/patterns.go",
+        "Remove: BluRay, BRRip, WEB-DL, WEBRip, HDRip, DVDRip, HDTV, BDRip, WEB, AMZN, NF",
+        "Patterns are case-insensitive",
+        "Test: 'Movie.2020.BluRay.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-012",
+      "title": "Title extraction - remove codec markers",
+      "description": "As a user, I want codec markers removed from filenames.",
+      "acceptanceCriteria": [
+        "Add codec patterns to internal/scanner/patterns.go",
+        "Remove: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX, 10bit, HDR, HDR10, DV",
+        "Patterns are case-insensitive",
+        "Test: 'Movie.2020.x264.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-013",
+      "title": "Title extraction - remove audio markers",
+      "description": "As a user, I want audio codec markers removed from filenames.",
+      "acceptanceCriteria": [
+        "Add audio patterns to internal/scanner/patterns.go",
+        "Remove: AAC, AC3, DTS, DTS-HD, TrueHD, FLAC, MP3, DD5.1, DD2.0, Atmos, 5.1, 7.1, 2.0",
+        "Patterns are case-insensitive",
+        "Test: 'Movie.2020.DTS.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 13,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-014",
+      "title": "Title extraction - remove release groups",
+      "description": "As a user, I want release group tags removed from filenames.",
+      "acceptanceCriteria": [
+        "Add release group patterns to internal/scanner/patterns.go",
+        "Remove bracketed groups: [YTS], [YIFY], [RARBG], [EVO], [FGT], etc.",
+        "Remove hyphenated suffixes: -SPARKS, -GECKOS, -FGT, -YIFY, etc.",
+        "Handle groups at start or end of filename",
+        "Test: 'Movie.2020-SPARKS.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 14,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-015",
+      "title": "Title extraction - handle edition markers",
+      "description": "As a user, I want edition markers handled correctly so the actual movie title is extracted.",
+      "acceptanceCriteria": [
+        "Add edition patterns to internal/scanner/patterns.go",
+        "Remove: Extended, Extended.Cut, Directors.Cut, Director's.Cut, Unrated, Theatrical, IMAX, Remastered",
+        "Patterns are case-insensitive",
+        "Test: 'Movie.2020.Extended.Cut.mkv' extracts as 'Movie' (2020)",
+        "Test: 'Movie.2020.Directors.Cut.mkv' extracts as 'Movie' (2020)",
+        "Typecheck passes"
+      ],
+      "priority": 15,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-016",
+      "title": "Title extraction - handle year-starting titles",
+      "description": "As a user, I want movies that start with years (like '2001: A Space Odyssey') parsed correctly.",
+      "acceptanceCriteria": [
+        "Update year extraction logic to handle titles starting with 4-digit numbers",
+        "Only treat as year if it's at the end followed by quality markers or in parentheses",
+        "Test: '2001.A.Space.Odyssey.1968.mkv' extracts as '2001 A Space Odyssey' (1968)",
+        "Test: '1917.2019.1080p.mkv' extracts as '1917' (2019)",
+        "Typecheck passes"
+      ],
+      "priority": 16,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-017",
+      "title": "Add --test-parser CLI flag",
+      "description": "As a developer, I want to test title extraction without running full scans.",
+      "acceptanceCriteria": [
+        "Add --test-parser flag to cmd/scanner/main.go",
+        "Flag accepts one or more filenames as arguments",
+        "For each filename, output: extracted title, year, and patterns matched",
+        "Support reading filenames from stdin when no arguments provided",
+        "Exit with non-zero code if any extraction produces empty title",
+        "Typecheck passes"
+      ],
+      "priority": 17,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-018",
+      "title": "Parse image URLs from NFO files",
+      "description": "As a developer, I need to extract image URLs from NFO files so they can be downloaded.",
+      "acceptanceCriteria": [
+        "Update internal/metadata/nfo/types.go to include Thumb and Fanart fields if not present",
+        "Update parser to extract <thumb> element URL for poster",
+        "Update parser to extract <fanart><thumb> element URLs for backdrops",
+        "Add PosterURL and BackdropURL fields to parsed NFO result",
+        "Typecheck passes"
+      ],
+      "priority": 18,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-019",
+      "title": "Add NFO image download config option",
+      "description": "As a user, I want to configure whether images are downloaded from NFO URLs.",
+      "acceptanceCriteria": [
+        "Add nfo_download_images bool field to options section in config struct",
+        "Default value: false (preserve existing behavior)",
+        "Update config.yaml.example with option and comment explaining behavior",
+        "Typecheck passes"
+      ],
+      "priority": 19,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-020",
+      "title": "Implement NFO image download with fallback",
+      "description": "As a user, I want images downloaded from NFO URLs when available, falling back to TMDB.",
+      "acceptanceCriteria": [
+        "When nfo_download_images is true, attempt to download from NFO URLs first",
+        "Validate URL is HTTP or HTTPS (skip local paths like /config/...)",
+        "On download failure, fall back to TMDB image download",
+        "Log image source (NFO vs TMDB) in verbose mode",
+        "When nfo_download_images is false, use existing TMDB-only behavior",
+        "Typecheck passes"
+      ],
+      "priority": 20,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-021",
+      "title": "Add watch folder config options",
+      "description": "As a user, I want to configure watch folder behavior.",
+      "acceptanceCriteria": [
+        "Add scanner.watch_mode bool field to config (default: false)",
+        "Add scanner.watch_debounce int field for seconds to wait (default: 30)",
+        "Add scanner.watch_recursive bool field (default: true)",
+        "Update config.yaml.example with watch options and comments",
+        "Typecheck passes"
+      ],
+      "priority": 21,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-022",
+      "title": "Implement basic watch folder functionality",
+      "description": "As a user, I want new movies automatically scanned when added to my library folders.",
+      "acceptanceCriteria": [
+        "Create internal/scanner/watcher.go",
+        "Add --watch flag to cmd/scanner/main.go",
+        "Monitor all directories in scanner.directories config",
+        "Use fsnotify library for file system events",
+        "Detect new files matching configured extensions",
+        "Apply debounce delay before processing (wait for copy to complete)",
+        "Process new files using existing scan pipeline",
+        "Typecheck passes"
+      ],
+      "priority": 22,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-023",
+      "title": "Handle watch folder file events",
+      "description": "As a user, I want file moves, renames, and deletions handled in watch mode.",
+      "acceptanceCriteria": [
+        "Detect file moves within watched directories",
+        "Detect file renames and trigger re-scan",
+        "Detect file deletions and log warning (don't delete MDX)",
+        "Handle rapid successive events with debouncing",
+        "Support recursive watching based on config option",
+        "Typecheck passes"
+      ],
+      "priority": 23,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-024",
+      "title": "Implement basic duplicate detection",
+      "description": "As a user, I want to find duplicate movies in my library.",
+      "acceptanceCriteria": [
+        "Create internal/scanner/duplicates.go",
+        "Add --find-duplicates flag to cmd/scanner/main.go",
+        "Scan all MDX files and group by TMDB ID",
+        "Also group by title + year for movies without TMDB ID",
+        "Output report listing all duplicate sets with file paths",
+        "Exit with count of duplicate sets found",
+        "Typecheck passes"
+      ],
+      "priority": 24,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-025",
+      "title": "Add quality comparison to duplicate detection",
+      "description": "As a user, I want to see which duplicate has better quality.",
+      "acceptanceCriteria": [
+        "Extract resolution from original filename (stored in MDX or re-parsed)",
+        "Extract source quality from filename",
+        "Quality ranking: 2160p > 1080p > 720p > 480p",
+        "Source ranking: BluRay > WEB-DL > HDRip > DVDRip",
+        "Mark recommended file to keep in duplicate report",
+        "Add --detailed flag for full quality breakdown",
+        "Typecheck passes"
+      ],
+      "priority": 25,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-026",
+      "title": "Add cache statistics tracking",
+      "description": "As a user, I want to see cache effectiveness metrics.",
+      "acceptanceCriteria": [
+        "Track cache hits and misses during scan in cache package",
+        "Add Stats() method to cache returning hits, misses, and entry count",
+        "Display cache stats at end of scan (hits, misses, hit rate percentage)",
+        "Add --cache-stats flag to show cache summary without scanning",
+        "Typecheck passes"
+      ],
+      "priority": 26,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-027",
+      "title": "Improve verbose logging",
+      "description": "As a user, I want clearer verbose output showing what the scanner is doing.",
+      "acceptanceCriteria": [
+        "Log metadata source for each movie: NFO, NFO+TMDB, TMDB, Cache",
+        "Log TMDB lookup method: direct ID vs search",
+        "Log image download source: NFO vs TMDB",
+        "Log retry attempts with attempt number and backoff duration",
+        "Log cache operations: hit, miss, store",
+        "Use consistent log format with movie title/file for context",
+        "Typecheck passes"
+      ],
+      "priority": 27,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-028",
+      "title": "Add configuration validation",
+      "description": "As a user, I want invalid configurations caught at startup.",
+      "acceptanceCriteria": [
+        "Validate new config options have correct types on load",
+        "Warn if nfo_download_images: true but use_nfo: false",
+        "Warn if watch_mode: true but no directories configured",
+        "Validate cache path parent directory exists and is writable",
+        "Validate retry.max_attempts and retry.initial_backoff_ms are positive",
+        "Exit with clear error message on validation failure",
+        "Typecheck passes"
+      ],
+      "priority": 28,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

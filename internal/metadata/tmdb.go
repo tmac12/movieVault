@@ -213,6 +213,77 @@ func (c *Client) GetFullMovieData(title string, year int) (*writer.Movie, error)
 	return movie, nil
 }
 
+// ErrMovieNotFound is returned when a movie is not found by ID
+var ErrMovieNotFound = fmt.Errorf("movie not found")
+
+// GetMovieByID fetches a movie directly by its TMDB ID, bypassing search
+func (c *Client) GetMovieByID(tmdbID int) (*writer.Movie, error) {
+	// Get detailed information
+	details, err := c.GetMovieDetails(tmdbID)
+	if err != nil {
+		// Check for 404 response
+		if strings.Contains(err.Error(), "status 404") {
+			return nil, ErrMovieNotFound
+		}
+		return nil, err
+	}
+
+	// Get credits
+	credits, err := c.GetMovieCredits(tmdbID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract genres
+	var genres []string
+	for _, genre := range details.Genres {
+		genres = append(genres, genre.Name)
+	}
+
+	// Extract director(s)
+	var directors []string
+	for _, crew := range credits.Crew {
+		if crew.Job == "Director" {
+			directors = append(directors, crew.Name)
+		}
+	}
+	director := strings.Join(directors, ", ")
+
+	// Extract top cast (first 5)
+	var cast []string
+	maxCast := 5
+	if len(credits.Cast) < maxCast {
+		maxCast = len(credits.Cast)
+	}
+	for i := 0; i < maxCast; i++ {
+		cast = append(cast, credits.Cast[i].Name)
+	}
+
+	// Extract release year
+	releaseYear := 0
+	if len(details.ReleaseDate) >= 4 {
+		releaseYear, _ = strconv.Atoi(details.ReleaseDate[:4])
+	}
+
+	// Build Movie struct
+	movie := &writer.Movie{
+		Title:       details.Title,
+		Description: details.Overview,
+		Rating:      details.VoteAverage,
+		ReleaseYear: releaseYear,
+		ReleaseDate: details.ReleaseDate,
+		Runtime:     details.Runtime,
+		Genres:      genres,
+		Director:    director,
+		Cast:        cast,
+		TMDBID:      details.ID,
+		IMDbID:      details.IMDbID,
+		ScannedAt:   time.Now(),
+	}
+
+	return movie, nil
+}
+
 // DownloadImage downloads an image from TMDB to a local path
 func (c *Client) DownloadImage(imagePath string, outputPath string, imageType string) error {
 	if imagePath == "" {

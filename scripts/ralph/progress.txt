@@ -1,0 +1,30 @@
+# Ralph Progress Log
+# Project: MovieVault v1.2 Scanner Overhaul
+# Branch: ralph/v1.2-scanner-overhaul
+# Started: 2026-01-30
+# ---
+
+## 2026-02-02: US-001 - Add GetMovieByID method to TMDB client
+
+### What was done:
+- Added `GetMovieByID(tmdbID int) (*writer.Movie, error)` method to `internal/metadata/tmdb.go`
+- Method directly calls TMDB `/movie/{id}` endpoint (via existing `GetMovieDetails`) bypassing search
+- Fetches credits via existing `GetMovieCredits` call
+- Returns fully populated `*writer.Movie` struct matching `GetFullMovieData` output format
+- Added `ErrMovieNotFound` sentinel error for proper 404 handling
+- Fixed pre-existing lint issue in `cmd/scanner/main.go` (redundant newline in fmt.Println)
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added GetMovieByID method and ErrMovieNotFound error
+- `cmd/scanner/main.go` - Fixed lint issue (unrelated to US-001 but blocked tests)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-002 is the logical next step - it will integrate GetMovieByID into the scanner's NFO processing flow
+- The method reuses existing GetMovieDetails and GetMovieCredits methods to maintain consistency
+- ErrMovieNotFound can be checked with `errors.Is(err, metadata.ErrMovieNotFound)` for fallback logic
+
