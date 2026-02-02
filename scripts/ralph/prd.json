@@ -397,8 +397,8 @@
         "Typecheck passes"
       ],
       "priority": 25,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added quality extraction and ranking to duplicate detection. Resolution ranking: 2160p/4K (4) > 1080p (3) > 720p/1080i (2) > 480p/720i (1). Source ranking: BluRay (8) > BDRip/BRRip (7) > WEB-DL (6) > WEBRip (5) > HDRip/HDTV (4) > DVDRip (3) > DVDSCR/SCREENER/R5 (2) > TS/TC (1) > CAM (0). Combined quality score = resolution*10 + source. DuplicateMovie struct extended with Resolution, Source, QualityScore, IsRecommended fields. markRecommended() marks highest quality copy in each set. PrintDuplicateReport() updated to show quality info and ★ RECOMMENDED marker. --detailed flag shows full quality breakdown with ranks and scores."
     },
     {
       "id": "US-026",

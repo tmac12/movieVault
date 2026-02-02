@@ -33,6 +33,7 @@ var (
 	testParser     = flag.Bool("test-parser", false, "Test title extraction without running full scan")
 	watchMode      = flag.Bool("watch", false, "Watch directories for new files and process automatically")
 	findDuplicates = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
+	detailed       = flag.Bool("detailed", false, "Show detailed quality breakdown in duplicate report (use with --find-duplicates)")
 )
 
 func main() {
@@ -655,6 +656,7 @@ func runTestParser() int {
 
 // runFindDuplicates scans MDX files and reports duplicate movies (US-024)
 // Returns exit code: count of duplicate sets found (0 if no duplicates)
+// US-025: Added quality comparison and --detailed flag support
 func runFindDuplicates() int {
 	// Load configuration to get MDX directory
 	cfg, err := config.Load(*configPath)
@@ -670,8 +672,8 @@ func runFindDuplicates() int {
 		return 1
 	}
 
-	// Print report
-	scanner.PrintDuplicateReport(duplicates)
+	// Print report with optional detailed mode (US-025)
+	scanner.PrintDuplicateReport(duplicates, *detailed)
 
 	// Exit with count of duplicate sets
 	return len(duplicates)

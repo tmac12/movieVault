@@ -919,3 +919,87 @@ Copies: 2
 - The DuplicateMovie struct can be extended with quality fields for US-025
 - Consider adding SourceFilePath field from original video file in future
 
+## 2026-02-02: US-025 - Add quality comparison to duplicate detection
+
+### What was done:
+- Added quality extraction and ranking to duplicate detection in `internal/scanner/duplicates.go`:
+  - Added `resolutionExtractPattern` and `sourceExtractPattern` regex patterns
+  - Added `resolutionRank` map: 2160p/4K (4) > 1080p (3) > 720p/1080i (2) > 480p/720i (1)
+  - Added `sourceRank` map: BluRay (8) > BDRip/BRRip (7) > WEB-DL (6) > WEBRip (5) > HDRip/HDTV (4) > DVDRip (3) > DVDSCR/SCREENER/R5 (2) > TS/TC (1) > CAM (0)
+  - Extended `DuplicateMovie` struct with `Resolution`, `Source`, `QualityScore`, and `IsRecommended` fields
+  - Added `extractQualityInfo()` to extract resolution and source from filename
+  - Added `calculateQualityScore()` to compute combined score (resolution*10 + source)
+  - Added `markRecommended()` to mark highest quality copy in each duplicate set
+  - Updated `PrintDuplicateReport()` to show quality info and ★ RECOMMENDED marker
+  - Added `formatQualityString()`, `displayResolution()`, `displaySource()` helper functions
+- Added `--detailed` flag to `cmd/scanner/main.go`:
+  - When used with `--find-duplicates`, shows full quality breakdown with ranks and scores
+  - Updated `runFindDuplicates()` to pass detailed flag to report function
+
+### Files modified:
+- `internal/scanner/duplicates.go` - Added quality extraction, ranking, and report formatting
+- `cmd/scanner/main.go` - Added --detailed flag for quality breakdown
+
+### Quality ranking logic:
+- **Resolution ranking** (higher is better):
+  - 2160p/4K: 4
+  - 1080p: 3
+  - 720p/1080i: 2
+  - 480p/720i: 1
+  - Unknown: 0
+- **Source ranking** (higher is better):
+  - BluRay: 8
+  - BDRip/BRRip: 7
+  - WEB-DL: 6
+  - WEBRip: 5
+  - HDRip/HDTV: 4
+  - DVDRip: 3
+  - DVDSCR/SCREENER/R5: 2
+  - TS/TC: 1
+  - CAM: 0
+  - Unknown: -1 (treated as 0 for scoring)
+- **Combined score**: resolution_rank * 10 + source_rank
+  - This ensures resolution has higher weight (e.g., 2160p WEB-DL (46) > 1080p BluRay (38))
+
+### Usage:
+```bash
+# Find duplicates with quality info
+./scanner --find-duplicates
+
+# Show detailed quality breakdown
+./scanner --find-duplicates --detailed
+```
+
+### Report output format:
+```
+━━━ Duplicate Set 1 ━━━
+TMDB ID: 12345
+Copies: 2
+
+  [1] Movie Title (2020) ★ RECOMMENDED
+      File: movie.2020.2160p.BluRay.mkv
+      Quality: 2160P BluRay
+      Path: /path/to/movie.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+
+  [2] Movie Title (2020)
+      File: movie.2020.1080p.WEB-DL.mkv
+      Quality: 1080P WEB-DL
+      Path: /path/to/movie2.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-026 (Add cache statistics tracking) is the next logical step
+- US-026 will add Stats() method to cache and --cache-stats flag
+- The quality extraction could be enhanced with more patterns (e.g., HDR, Atmos)
+- Consider adding file size comparison as a tiebreaker when quality scores are equal
+
