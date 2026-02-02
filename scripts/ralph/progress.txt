@@ -53,3 +53,34 @@
 - Verbose mode now shows which lookup method was used for debugging
 - The mergeMovieData function is still used to combine NFO data with TMDB data (NFO takes priority)
 
+## 2026-02-02: US-003 - Add retry package with exponential backoff
+
+### What was done:
+- Created `internal/retry/retry.go` package with reusable retry utility
+- Implemented `Retry(fn func() error, maxAttempts int, initialBackoff time.Duration) error`
+  - Executes function with exponential backoff until success or maxAttempts reached
+  - Backoff doubles after each failed attempt
+  - Rate-limited errors (429) use 2x longer backoff
+  - Non-retryable errors (401, 404) return immediately without retry
+- Implemented `IsRetryable(err error) bool` helper that returns true for:
+  - `net.Error` timeouts (via `errors.As`)
+  - `url.Error` timeouts (via `errors.As`)
+  - HTTP 5xx status codes (500, 501, 502, 503, 504)
+  - Common transient error messages (connection reset, connection refused, no such host, i/o timeout, temporary failure)
+- Implemented `IsRateLimited(err error) bool` helper that returns true for HTTP 429 errors
+
+### Files created:
+- `internal/retry/retry.go` - New retry package with exponential backoff
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: npm build has esbuild ARM64 compatibility issue unrelated to Go code changes
+
+### Notes for next developer:
+- US-004 (Add retry config options) is the next logical step - it will add config struct fields
+- US-005 will then integrate this retry logic into the TMDB client
+- The retry package uses error string matching for HTTP status codes since TMDB client wraps errors with fmt.Errorf
+- Consider adding structured error types in future for better error classification
+
