@@ -8,9 +8,11 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/marco/movieVault/internal/config"
@@ -29,6 +31,7 @@ var (
 	verbose      = flag.Bool("verbose", false, "Show detailed logging")
 	clearCache   = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
 	testParser   = flag.Bool("test-parser", false, "Test title extraction without running full scan")
+	watchMode    = flag.Bool("watch", false, "Watch directories for new files and process automatically")
 )
 
 func main() {
@@ -429,6 +432,50 @@ func main() {
 		"duration_sec", duration.Seconds(),
 	)
 
+	// Start watch mode if enabled (US-022)
+	if *watchMode || cfg.Scanner.WatchMode {
+		slog.Info("starting watch mode")
+
+		// Create file handler that processes files using the existing pipeline
+		fileHandler := createFileHandler(cfg, tmdbClient, mdxWriter)
+
+		// Configure watcher
+		watcherCfg := scanner.WatcherConfig{
+			Directories:   cfg.Scanner.Directories,
+			Extensions:    cfg.Scanner.Extensions,
+			MDXDir:        cfg.Output.MDXDir,
+			ExcludeDirs:   cfg.Scanner.ExcludeDirs,
+			DebounceDelay: time.Duration(cfg.Scanner.WatchDebounce) * time.Second,
+			Recursive:     *cfg.Scanner.WatchRecursive,
+		}
+
+		watcher, err := scanner.NewWatcher(watcherCfg, fileHandler)
+		if err != nil {
+			slog.Error("failed to create file watcher", "error", err)
+			os.Exit(1)
+		}
+
+		// Start watching
+		if err := watcher.Start(); err != nil {
+			slog.Error("failed to start file watcher", "error", err)
+			os.Exit(1)
+		}
+
+		// Wait for interrupt signal
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+		slog.Info("watch mode active, press Ctrl+C to stop")
+		<-sigChan
+
+		slog.Info("stopping watch mode")
+		if err := watcher.Stop(); err != nil {
+			slog.Error("error stopping watcher", "error", err)
+		}
+
+		return
+	}
+
 	// Show metadata source breakdown
 	if successCount > 0 {
 		slog.Info("metadata sources",
@@ -641,6 +688,122 @@ func detectPatternsMatched(filename string) string {
 	}
 
 	return strings.Join(patterns, ", ")
+}
+
+// createFileHandler creates a handler function for processing new files in watch mode (US-022)
+func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWriter *writer.MDXWriter) scanner.FileHandler {
+	return func(file scanner.FileInfo) error {
+		slog.Info("watch mode: processing file", "filename", file.FileName)
+
+		// Fetch metadata from NFO or TMDB (same logic as main scan)
+		var movie *writer.Movie
+		var err error
+		var metadataSource string
+
+		if cfg.Options.UseNFO {
+			nfoParser := nfo.NewParser()
+			movie, err = nfoParser.GetMovieFromNFO(file.Path)
+
+			if err != nil {
+				if cfg.Options.NFOFallbackTMDB {
+					slog.Debug("nfo error, falling back to tmdb", "error", err)
+					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
+					metadataSource = "TMDB"
+				}
+			} else {
+				metadataSource = "NFO"
+
+				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
+					slog.Debug("nfo contains tmdb id, using direct lookup", "tmdb_id", movie.TMDBID)
+					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
+					if tmdbErr != nil {
+						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
+							slog.Debug("tmdb id not found, falling back to search", "tmdb_id", movie.TMDBID)
+							tmdbMovie, tmdbErr = tmdbClient.GetFullMovieData(file.Title, file.Year)
+						}
+					}
+					if tmdbErr == nil && tmdbMovie != nil {
+						movie = mergeMovieData(movie, tmdbMovie)
+						metadataSource = "NFO+TMDB"
+					}
+				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
+					slog.Debug("nfo incomplete, enriching with tmdb search")
+					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
+					if tmdbErr == nil && tmdbMovie != nil {
+						movie = mergeMovieData(movie, tmdbMovie)
+						metadataSource = "NFO+TMDB"
+					}
+				}
+			}
+		} else {
+			movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
+			metadataSource = "TMDB"
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to fetch metadata: %w", err)
+		}
+
+		// Generate clean slug from metadata title
+		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
+		movie.FilePath = file.Path
+		movie.FileName = file.FileName
+		movie.FileSize = file.Size
+
+		slog.Info("metadata fetched", "movie", movie.Title, "year", movie.ReleaseYear, "source", metadataSource)
+
+		// Download cover image
+		if cfg.Options.DownloadCovers {
+			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
+			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
+
+			coverDownloaded := false
+			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
+				if err := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); err == nil {
+					coverDownloaded = true
+					slog.Debug("downloaded cover image", "movie", movie.Title, "source", "NFO")
+				}
+			}
+			if !coverDownloaded {
+				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
+				if searchResult != nil && searchResult.PosterPath != "" {
+					if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err == nil {
+						slog.Debug("downloaded cover image", "movie", movie.Title, "source", "TMDB")
+					}
+				}
+			}
+		}
+
+		// Download backdrop image
+		if cfg.Options.DownloadBackdrops {
+			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
+			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
+
+			backdropDownloaded := false
+			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
+				if err := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); err == nil {
+					backdropDownloaded = true
+					slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", "NFO")
+				}
+			}
+			if !backdropDownloaded {
+				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
+				if searchResult != nil && searchResult.BackdropPath != "" {
+					if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err == nil {
+						slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", "TMDB")
+					}
+				}
+			}
+		}
+
+		// Write MDX file
+		if err := mdxWriter.WriteMDXFile(movie); err != nil {
+			return fmt.Errorf("failed to write mdx file: %w", err)
+		}
+
+		slog.Info("watch mode: file processed successfully", "movie", movie.Title, "slug", movie.Slug)
+		return nil
+	}
 }
 
 // Helper function to repeat a string (not available in older Go versions)

@@ -347,8 +347,8 @@
         "Typecheck passes"
       ],
       "priority": 22,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Created internal/scanner/watcher.go with Watcher struct using fsnotify library. Added --watch flag to scanner CLI. Watcher monitors all configured directories for file system events, filters for matching extensions, applies configurable debounce delay before processing. Uses existing metadata fetch and MDX write pipeline via createFileHandler(). Supports recursive watching via config. Graceful shutdown via SIGINT/SIGTERM signals."
     },
     {
       "id": "US-023",

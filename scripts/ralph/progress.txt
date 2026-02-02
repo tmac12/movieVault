@@ -752,3 +752,66 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - The config values can be accessed via `cfg.Scanner.WatchMode`, `cfg.Scanner.WatchDebounce`, and `*cfg.Scanner.WatchRecursive`
 - Remember to dereference `WatchRecursive` pointer when using: `*cfg.Scanner.WatchRecursive`
 
+## 2026-02-02: US-022 - Implement basic watch folder functionality
+
+### What was done:
+- Created `internal/scanner/watcher.go` with `Watcher` struct for monitoring directories:
+  - Uses `github.com/fsnotify/fsnotify` library for file system events
+  - `WatcherConfig` struct holds configuration (directories, extensions, debounce delay, recursive flag)
+  - `NewWatcher()` creates watcher with provided config and file handler callback
+  - `Start()` begins watching all configured directories
+  - `Stop()` gracefully stops watcher and cancels pending timers
+  - `Wait()` blocks until watcher is stopped
+- Implemented debounce logic:
+  - Tracks pending files with `pendingFiles` map and `pendingTimers` map
+  - `scheduleProcessing()` creates/resets timer for each file event
+  - After debounce delay expires, `processFile()` is called
+  - Debounce prevents processing incomplete file copies
+- Added recursive directory watching:
+  - When `recursive: true`, walks directory tree and adds all subdirectories
+  - Detects new directory creation and adds to watch list
+  - Respects `exclude_dirs` configuration for skipping directories
+- Added `--watch` flag to `cmd/scanner/main.go`:
+  - When `--watch` flag is used or `watch_mode: true` in config, enters watch mode after initial scan
+  - Creates `FileHandler` callback via `createFileHandler()` that uses existing metadata/MDX pipeline
+  - Handles SIGINT/SIGTERM signals for graceful shutdown
+- Added `createFileHandler()` function:
+  - Wraps existing metadata fetch logic (NFO priority, TMDB fallback, merging)
+  - Downloads cover and backdrop images using same logic as main scan
+  - Writes MDX files using existing `MDXWriter`
+- Added `github.com/fsnotify/fsnotify v1.9.0` dependency to `go.mod`
+
+### Files created:
+- `internal/scanner/watcher.go` - Watcher struct with fsnotify integration
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --watch flag, watch mode loop, createFileHandler()
+- `go.mod` - Added fsnotify dependency
+- `go.sum` - Updated with fsnotify checksums
+
+### Usage:
+```bash
+# Run scanner once then enter watch mode
+./scanner --watch
+
+# Or enable in config
+# config.yaml:
+# scanner:
+#   watch_mode: true
+#   watch_debounce: 30  # seconds
+#   watch_recursive: true
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-023 (Handle watch folder file events) is the next logical step
+- US-023 will add handling for file moves, renames, and deletions
+- The watcher currently handles Create and Write events; US-023 adds Rename and Remove
+- Current behavior logs warning for deletions but doesn't delete MDX (as specified)
+- The `isHiddenFile()` and `normalizeEventPath()` helpers are defined but not yet used (for future use in US-023)
+
