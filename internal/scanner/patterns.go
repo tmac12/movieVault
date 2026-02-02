@@ -12,8 +12,9 @@ var (
 	yearPattern = regexp.MustCompile(`[\[\(]?(\d{4})[\]\)]?`)
 	// Resolution markers (US-010)
 	resolutionPattern = regexp.MustCompile(`(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`)
-	// Source/quality markers (kept separate from resolution)
-	qualityPattern = regexp.MustCompile(`(?i)\b(BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV)\b`)
+	// Source/quality markers (kept separate from resolution) (US-011)
+	// Includes: BluRay, BRRip, WEB-DL, WEBRip, HDRip, DVDRip, HDTV, BDRip, WEB, AMZN, NF
+	qualityPattern = regexp.MustCompile(`(?i)\b(BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF)\b`)
 	codecPattern   = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC)\b`)
 	audioPattern        = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC)\b`)
 	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)

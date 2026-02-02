@@ -325,3 +325,37 @@
 - Keep the pattern ordering: resolution → year → quality → codec → audio → etc.
 - Pattern order matters because year extraction can match 4-digit numbers in other patterns
 
+## 2026-02-02: US-011 - Title extraction - remove source markers
+
+### What was done:
+- Expanded `qualityPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV`
+  - New pattern: `BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF`
+  - Added missing markers: BRRip, WEB, AMZN, NF
+  - BDRip was already present in the original pattern
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-011 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded qualityPattern with additional source markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.BluRay.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.BRRip.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB-DL.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEBRip.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AMZN.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.NF.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-012 (Title extraction - remove codec markers) is the next logical step
+- The codecPattern already exists but should be verified against US-012 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+

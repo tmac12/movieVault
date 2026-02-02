@@ -176,8 +176,8 @@
         "Typecheck passes"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Expanded qualityPattern regex in internal/scanner/patterns.go to include all required source markers: BluRay, BRRip, WEB-DL, WEBRip, HDRip, DVDRip, HDTV, BDRip, WEB, AMZN, NF. Pattern is case-insensitive via (?i) flag. Go build/vet/test all pass. Website has no typecheck/test scripts configured."
     },
     {
       "id": "US-012",
