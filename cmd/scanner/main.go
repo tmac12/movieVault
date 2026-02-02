@@ -24,6 +24,7 @@ var (
 	noBuild      = flag.Bool("no-build", false, "Skip Astro build step")
 	dryRun       = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
 	verbose      = flag.Bool("verbose", false, "Show detailed logging")
+	clearCache   = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
 )
 
 func main() {
@@ -64,6 +65,37 @@ func main() {
 			"mdx_dir", cfg.Output.MDXDir,
 			"covers_dir", cfg.Output.CoversDir,
 		)
+	}
+
+	// Handle --clear-cache flag
+	if *clearCache {
+		if !cfg.Cache.Enabled {
+			fmt.Println("Cache is disabled in configuration.")
+			os.Exit(0)
+		}
+
+		tmdbCache, err := cache.NewSQLiteCache(cfg.Cache.Path)
+		if err != nil {
+			slog.Error("failed to open cache", "path", cfg.Cache.Path, "error", err)
+			os.Exit(1)
+		}
+		defer tmdbCache.Close()
+
+		// Get count before clearing
+		count, err := tmdbCache.Count()
+		if err != nil {
+			slog.Error("failed to count cache entries", "error", err)
+			os.Exit(1)
+		}
+
+		// Clear the cache
+		if err := tmdbCache.Clear(); err != nil {
+			slog.Error("failed to clear cache", "error", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Cache cleared successfully. %d entries removed.\n", count)
+		os.Exit(0)
 	}
 
 	// Create scanner with directory exclusions

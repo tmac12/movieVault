@@ -102,6 +102,16 @@ func (c *SQLiteCache) Clear() error {
 	return nil
 }
 
+// Count returns the number of entries in the cache.
+func (c *SQLiteCache) Count() (int, error) {
+	var count int
+	err := c.db.QueryRow("SELECT COUNT(*) FROM cache").Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count cache entries: %w", err)
+	}
+	return count, nil
+}
+
 // Close closes the database connection.
 func (c *SQLiteCache) Close() error {
 	if c.db != nil {

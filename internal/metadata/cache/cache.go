@@ -15,6 +15,9 @@ type Cache interface {
 	// Clear removes all entries from the cache.
 	Clear() error
 
+	// Count returns the number of entries in the cache.
+	Count() (int, error)
+
 	// Close closes the cache and releases resources.
 	Close() error
 }

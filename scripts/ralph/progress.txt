@@ -254,3 +254,74 @@
 - If cache initialization fails, the scanner exits with error code 1
 - Image downloads (DownloadImage) are NOT cached since they go directly to files
 
+## 2026-02-02: US-009 - Add --clear-cache CLI flag
+
+### What was done:
+- Added `--clear-cache` flag to `cmd/scanner/main.go`
+- When flag is set:
+  1. Opens the SQLite cache at the configured path
+  2. Counts existing entries using new `Count()` method
+  3. Clears all entries via `cache.Clear()`
+  4. Prints confirmation message with number of entries removed
+  5. Exits with code 0 on success
+- Exits with code 1 on any error (failed to open cache, count, or clear)
+- Gracefully handles disabled cache configuration (prints message and exits 0)
+- Added `Count() (int, error)` method to `Cache` interface in `internal/metadata/cache/cache.go`
+- Implemented `Count()` in `SQLiteCache` using `SELECT COUNT(*) FROM cache`
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --clear-cache flag and handling logic
+- `internal/metadata/cache/cache.go` - Added Count() method to Cache interface
+- `internal/metadata/cache/sqlite.go` - Implemented Count() method for SQLiteCache
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-010 (Title extraction - remove resolution markers) is the next logical step
+- The --clear-cache flag is handled early in main() after config loading but before scanning
+- Count() is called before Clear() to report how many entries were removed
+- If cache is disabled in config, the flag just prints a message and exits successfully
+
+## 2026-02-02: US-010 - Title extraction - remove resolution markers
+
+### What was done:
+- Added `resolutionPattern` regex to `internal/scanner/patterns.go`
+  - Pattern: `(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`
+  - Case-insensitive matching via `(?i)` flag
+  - Matches all required resolutions: 2160p, 1080p, 1080i, 720p, 720i, 480p, 4K
+- Separated resolution patterns from source quality patterns for clarity
+  - `resolutionPattern` - resolution markers only
+  - `qualityPattern` - source markers (BluRay, WEB-DL, etc.)
+- **Critical fix**: Resolution markers must be removed BEFORE year extraction
+  - The year pattern `[\[\(]?(\d{4})[\]\)]?` was matching "1080" in "1080p" as a year
+  - This left orphan "p" characters in titles (e.g., "Movie p" instead of "Movie")
+  - Moving resolution removal before year extraction prevents this issue
+
+### Files modified:
+- `internal/scanner/patterns.go` - Added resolutionPattern, reordered processing
+
+### Test cases verified:
+- `Movie.2020.1080p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.720p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.2160p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.4K.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.480p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.1080i.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.720i.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `The.Matrix.1999.1080p.BluRay.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-011 (Title extraction - remove source markers) is the next logical step
+- The qualityPattern already contains some source markers but US-011 expands the list
+- Keep the pattern ordering: resolution → year → quality → codec → audio → etc.
+- Pattern order matters because year extraction can match 4-digit numbers in other patterns
+

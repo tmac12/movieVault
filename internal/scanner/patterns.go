@@ -9,9 +9,12 @@ import (
 
 var (
 	// Patterns to remove from filenames
-	yearPattern         = regexp.MustCompile(`[\[\(]?(\d{4})[\]\)]?`)
-	qualityPattern      = regexp.MustCompile(`(?i)\b(1080p?|720p?|480p?|2160p?|4K|BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV)\b`)
-	codecPattern        = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC)\b`)
+	yearPattern = regexp.MustCompile(`[\[\(]?(\d{4})[\]\)]?`)
+	// Resolution markers (US-010)
+	resolutionPattern = regexp.MustCompile(`(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`)
+	// Source/quality markers (kept separate from resolution)
+	qualityPattern = regexp.MustCompile(`(?i)\b(BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV)\b`)
+	codecPattern   = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC)\b`)
 	audioPattern        = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC)\b`)
 	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)
 	subtitlePattern     = regexp.MustCompile(`(?i)\b(sub|subs|subtitle|subtitles|subbed)\b`)
@@ -24,6 +27,11 @@ var (
 func ExtractTitleAndYear(filename string) (title string, year int) {
 	// Remove file extension
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	// Remove resolution markers FIRST (US-010)
+	// This must happen before year extraction to prevent "1080p" from being
+	// parsed as year "1080" with leftover "p"
+	name = resolutionPattern.ReplaceAllString(name, " ")
 
 	// Extract year if present
 	yearMatches := yearPattern.FindStringSubmatch(name)

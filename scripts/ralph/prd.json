@@ -146,8 +146,8 @@
         "Typecheck passes"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added --clear-cache flag to scanner. Opens cache, counts entries, clears cache, prints confirmation with count, and exits. Added Count() method to Cache interface and SQLiteCache implementation to get entry count before clearing."
     },
     {
       "id": "US-010",
@@ -161,8 +161,8 @@
         "Typecheck passes"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added resolutionPattern regex to match all required resolutions (2160p, 1080p, 1080i, 720p, 720i, 480p, 4K) case-insensitively. Key fix: resolution patterns must be removed BEFORE year extraction to prevent '1080' from being parsed as a year with leftover 'p'. Separated resolution from source quality patterns for clarity."
     },
     {
       "id": "US-011",
