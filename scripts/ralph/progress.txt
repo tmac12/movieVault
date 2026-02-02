@@ -480,3 +480,54 @@
 - The `extraInfoPattern` already handles some edition markers but US-015 expands the list
 - Keep pattern ordering: resolution → year → quality → codec → audio → release groups → brackets
 
+## 2026-02-02: US-015 - Title extraction - handle edition markers
+
+### What was done:
+- Renamed `extraInfoPattern` to `editionPattern` in `internal/scanner/patterns.go`
+  - Provides semantic clarity about what the pattern matches
+  - Added `extraInfoPattern = editionPattern` alias for backwards compatibility
+- Expanded edition pattern to properly match all required markers:
+  - `EXTENDED\.?CUT` - matches "Extended.Cut", "ExtendedCut", "EXTENDED.CUT"
+  - `EXTENDED` - matches standalone "Extended"
+  - `DIRECTOR\'?S\.?CUT` - matches "Director's.Cut", "Director'sCut", "DirectorsCut"
+  - `DIRECTORS\.?CUT` - matches "Directors.Cut", "DirectorsCut"
+  - `UNRATED` - matches "Unrated"
+  - `THEATRICAL` - matches "Theatrical"
+  - `IMAX` - matches "IMAX"
+  - `REMASTERED` - matches "Remastered"
+  - `DC` - Director's Cut abbreviation (kept from original)
+  - `UHD` - Ultra HD marker (kept from original)
+- Removed HDR and HDR10 from edition pattern (they're already in codecPattern)
+- Updated function comment to reference edition markers instead of "extra info"
+- Created `internal/scanner/patterns_test.go` with unit tests for edition markers
+
+### Files modified:
+- `internal/scanner/patterns.go` - Renamed and expanded edition pattern
+
+### Files created:
+- `internal/scanner/patterns_test.go` - Unit tests for edition marker extraction
+
+### Test cases verified:
+- `Movie.2020.Extended.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Directors.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Director's.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Unrated.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Theatrical.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.IMAX.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Remastered.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `The.Matrix.1999.Extended.Cut.1080p.BluRay.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+- `Blade.Runner.1982.Directors.Cut.2160p.mkv` -> Title: 'Blade Runner', Year: 1982 ✓
+- Case insensitive variants (extended.cut, DIRECTORS.CUT) ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (now includes patterns_test.go)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-016 (Title extraction - handle year-starting titles) is the next logical step
+- This handles movies like "2001: A Space Odyssey" and "1917" where titles start with years
+- The year extraction logic needs to distinguish between years in titles vs release years
+- Pattern ordering remains: resolution → year → quality → codec → audio → edition → release groups → brackets
+

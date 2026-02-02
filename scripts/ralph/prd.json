@@ -238,8 +238,8 @@
         "Typecheck passes"
       ],
       "priority": 15,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added editionPattern regex to internal/scanner/patterns.go. Pattern matches: EXTENDED.CUT, EXTENDED, DIRECTOR'S.CUT, DIRECTORS.CUT, UNRATED, THEATRICAL, IMAX, REMASTERED, DC, UHD. Renamed extraInfoPattern to editionPattern with legacy alias for backwards compatibility. All patterns case-insensitive via (?i) flag. Created patterns_test.go with unit tests for edition markers. Go build/vet/test all pass."
     },
     {
       "id": "US-016",

@@ -30,7 +30,12 @@ var (
 	bracketedGroupPattern = regexp.MustCompile(`(?i)\[(YTS|YIFY|RARBG|EVO|FGT|MULTi|SPARKS|GECKOS|1080p|720p|2160p|4K|WEB|BRRip|BluRay|x264|x265|HEVC|HDR|DTS|AAC|FLAC|MP3|ENG|ITA|SPA|GER|FRA|RUS|JPN|KOR|CHI|MULTi|NF|AMZN|HULU|DSNP|MAX|PCOK|[A-Za-z0-9\.]+)\]`)
 	// Generic bracket content (catches remaining)
 	bracketPattern = regexp.MustCompile(`\[([^\]]+)\]`)
-	extraInfoPattern    = regexp.MustCompile(`(?i)\b(EXTENDED|UNRATED|DIRECTOR.?S.?CUT|REMASTERED|THEATRICAL|IMAX|DC|UHD|HDR|HDR10)\b`)
+	// Edition markers (US-015)
+	// Includes: Extended, Extended.Cut, Directors.Cut, Director's.Cut, Unrated, Theatrical, IMAX, Remastered
+	// Also keeps: DC (Director's Cut abbreviation), UHD
+	editionPattern = regexp.MustCompile(`(?i)\b(EXTENDED\.?CUT|EXTENDED|DIRECTOR\'?S\.?CUT|DIRECTORS\.?CUT|UNRATED|THEATRICAL|IMAX|REMASTERED|DC|UHD)\b`)
+	// Legacy alias for backwards compatibility
+	extraInfoPattern = editionPattern
 )
 
 // ExtractTitleAndYear extracts the movie title and year from a filename
@@ -67,8 +72,8 @@ func ExtractTitleAndYear(filename string) (title string, year int) {
 	// Remove subtitle markers
 	name = subtitlePattern.ReplaceAllString(name, " ")
 
-	// Remove extra info
-	name = extraInfoPattern.ReplaceAllString(name, " ")
+	// Remove edition markers (US-015)
+	name = editionPattern.ReplaceAllString(name, " ")
 
 	// Remove bracketed release groups first (US-014)
 	// e.g., [YTS], [YIFY], [RARBG], [EVO], [FGT]
