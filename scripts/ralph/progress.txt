@@ -145,3 +145,41 @@
 - Verbose mode (`--verbose` flag) will show retry attempts in the log output
 - The `NewClient()` function is preserved for backward compatibility with default retry settings (3 attempts, 1000ms initial backoff)
 
+## 2026-02-02: US-006 - Create SQLite cache package
+
+### What was done:
+- Created `internal/metadata/cache/cache.go` with `Cache` interface defining:
+  - `Get(key string) ([]byte, bool)` - retrieves data from cache
+  - `Set(key string, data []byte, ttl time.Duration) error` - stores data with TTL
+  - `Clear() error` - removes all entries
+  - `Close() error` - closes the cache and releases resources
+- Created `internal/metadata/cache/sqlite.go` with `SQLiteCache` implementation:
+  - Uses `github.com/mattn/go-sqlite3` driver for SQLite persistence
+  - Schema: `id` (autoincrement), `cache_key` (unique), `response_json` (blob), `cached_at`, `expires_at`
+  - Indexes on `cache_key` and `expires_at` for performance
+  - `NewSQLiteCache(dbPath string)` auto-creates database file and table on first use
+  - Get() returns cached data if found and not expired, deletes expired entries on access
+  - Set() uses INSERT OR REPLACE to handle both new entries and updates
+  - Clear() deletes all rows from cache table
+- Added `github.com/mattn/go-sqlite3 v1.14.33` dependency to go.mod
+
+### Files created:
+- `internal/metadata/cache/cache.go` - Cache interface
+- `internal/metadata/cache/sqlite.go` - SQLiteCache implementation
+
+### Files modified:
+- `go.mod` - Added go-sqlite3 dependency
+- `go.sum` - Updated with go-sqlite3 checksums
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-007 (Add cache config options) is the next logical step - adds Enabled, Path, and TTLDays config fields
+- US-008 will then integrate the cache into the TMDB client
+- The cache uses TTL-based expiration checked on Get() - expired entries are deleted when accessed
+- The SQLiteCache requires explicit Close() call to release database connection
+- Parent directory for database file is auto-created if it doesn't exist
+
