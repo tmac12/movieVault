@@ -23,8 +23,13 @@ var (
 	audioPattern = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS-HD|DTS|TrueHD|FLAC|MP3|DD5\.1|DD2\.0|Atmos|7\.1|5\.1|2\.0|MA)\b`)
 	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)
 	subtitlePattern     = regexp.MustCompile(`(?i)\b(sub|subs|subtitle|subtitles|subbed)\b`)
-	releaseGroupPattern = regexp.MustCompile(`(?i)[-\.]([A-Z0-9]+(\.[A-Z]+)*|MIRCrew|RARBG|YTS|YIFY|PublicHD|Tigole|QxR|UTR|ION10|EVO|CMRG|FGT)$`)
-	bracketPattern      = regexp.MustCompile(`\[([^\]]+)\]`)
+	// Release group patterns (US-014)
+	// Hyphenated suffixes at end: -SPARKS, -GECKOS, -FGT, -YIFY, etc.
+	releaseGroupPattern = regexp.MustCompile(`(?i)[-\.]([A-Z0-9]+(\.[A-Z]+)*|MIRCrew|RARBG|YTS|YIFY|PublicHD|Tigole|QxR|UTR|ION10|EVO|CMRG|FGT|SPARKS|GECKOS|AMIABLE|DRONES|BLOW|GALACTICA|CODEX|SKIDROW|PLAZA|CPY|RELOADED|TERMiNAL|DEFLATE|CHD|RuDE|VETO|CiNEFiLE|PSYCHD)$`)
+	// Bracketed groups: [YTS], [YIFY], [RARBG], [EVO], [FGT], etc.
+	bracketedGroupPattern = regexp.MustCompile(`(?i)\[(YTS|YIFY|RARBG|EVO|FGT|MULTi|SPARKS|GECKOS|1080p|720p|2160p|4K|WEB|BRRip|BluRay|x264|x265|HEVC|HDR|DTS|AAC|FLAC|MP3|ENG|ITA|SPA|GER|FRA|RUS|JPN|KOR|CHI|MULTi|NF|AMZN|HULU|DSNP|MAX|PCOK|[A-Za-z0-9\.]+)\]`)
+	// Generic bracket content (catches remaining)
+	bracketPattern = regexp.MustCompile(`\[([^\]]+)\]`)
 	extraInfoPattern    = regexp.MustCompile(`(?i)\b(EXTENDED|UNRATED|DIRECTOR.?S.?CUT|REMASTERED|THEATRICAL|IMAX|DC|UHD|HDR|HDR10)\b`)
 )
 
@@ -65,10 +70,15 @@ func ExtractTitleAndYear(filename string) (title string, year int) {
 	// Remove extra info
 	name = extraInfoPattern.ReplaceAllString(name, " ")
 
-	// Remove release group (usually after a dash at the end)
+	// Remove bracketed release groups first (US-014)
+	// e.g., [YTS], [YIFY], [RARBG], [EVO], [FGT]
+	name = bracketedGroupPattern.ReplaceAllString(name, " ")
+
+	// Remove release group (usually after a dash at the end) (US-014)
+	// e.g., -SPARKS, -GECKOS, -FGT, -YIFY
 	name = releaseGroupPattern.ReplaceAllString(name, "")
 
-	// Remove content in brackets
+	// Remove any remaining content in brackets
 	name = bracketPattern.ReplaceAllString(name, " ")
 
 	// Replace dots and underscores with spaces

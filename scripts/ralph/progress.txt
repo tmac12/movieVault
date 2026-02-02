@@ -437,3 +437,46 @@
 - The releaseGroupPattern already exists and should be verified against US-014 requirements
 - Keep pattern ordering: resolution → year → quality → codec → audio → etc.
 
+## 2026-02-02: US-014 - Title extraction - remove release groups
+
+### What was done:
+- Enhanced `releaseGroupPattern` regex in `internal/scanner/patterns.go`
+  - Added common release groups: SPARKS, GECKOS, AMIABLE, DRONES, BLOW, GALACTICA, CODEX, SKIDROW, PLAZA, CPY, RELOADED, TERMiNAL, DEFLATE, CHD, RuDE, VETO, CiNEFiLE, PSYCHD
+  - Pattern continues to match hyphenated suffixes at end of filename (e.g., -SPARKS, -GECKOS)
+- Added new `bracketedGroupPattern` regex for bracketed release groups at start/anywhere in filename
+  - Matches: [YTS], [YIFY], [RARBG], [EVO], [FGT], [YTS.MX], etc.
+  - Also matches common technical markers in brackets as fallback: [1080p], [x264], etc.
+- Updated `ExtractTitleAndYear` function to process patterns in order:
+  1. `bracketedGroupPattern` - removes [YTS], [RARBG], etc. first
+  2. `releaseGroupPattern` - removes -SPARKS, -GECKOS, etc. at end
+  3. `bracketPattern` - catches any remaining bracketed content
+
+### Files modified:
+- `internal/scanner/patterns.go` - Enhanced releaseGroupPattern, added bracketedGroupPattern, updated function
+
+### Test cases verified:
+- `Movie.2020-SPARKS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-GECKOS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-FGT.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-YIFY.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YTS]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YIFY]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[RARBG]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[EVO]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[FGT]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.1080p.BluRay-SPARKS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB-DL-GECKOS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YTS.MX]Movie.2020.1080p.BluRay.mkv` -> Title: 'Movie', Year: 2020 ✓
+- Previous tests (The Matrix, etc.) continue to pass ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-015 (Title extraction - handle edition markers) is the next logical step
+- The `extraInfoPattern` already handles some edition markers but US-015 expands the list
+- Keep pattern ordering: resolution → year → quality → codec → audio → release groups → brackets
+

@@ -222,8 +222,8 @@
         "Typecheck passes"
       ],
       "priority": 14,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Expanded releaseGroupPattern to include SPARKS, GECKOS, AMIABLE, DRONES, BLOW, GALACTICA, CODEX, SKIDROW, PLAZA, CPY, RELOADED, TERMiNAL, DEFLATE, CHD, RuDE, VETO, CiNEFiLE, PSYCHD. Added new bracketedGroupPattern to specifically match common bracketed groups [YTS], [YIFY], [RARBG], etc. at start of filenames. Updated ExtractTitleAndYear to process bracketedGroupPattern before releaseGroupPattern for proper ordering. Go build/vet/test all pass."
     },
     {
       "id": "US-015",
