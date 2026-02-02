@@ -580,3 +580,51 @@
 - Years in parentheses/brackets always take priority as they're the most explicit format
 - The algorithm falls back to the last 4-digit number if no quality markers are found (backwards compatibility)
 
+## 2026-02-02: US-017 - Add --test-parser CLI flag
+
+### What was done:
+- Added `--test-parser` flag to `cmd/scanner/main.go`
+- When flag is used, tests title extraction on provided filenames without running full scan
+- For each filename, outputs:
+  - Filename
+  - Extracted title
+  - Extracted year (or "not found")
+  - Generated slug
+  - Patterns matched (resolution, year, quality, codec, audio, language, edition, release-group, bracketed-group)
+- Supports reading filenames from stdin when no arguments provided (e.g., `echo "file.mkv" | scanner --test-parser`)
+- Returns exit code 0 on success, exit code 1 if any extraction produces empty title
+- Added `runTestParser()` function to handle the flag
+- Added `detectPatternsMatched()` helper function to identify which pattern categories matched each filename
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --test-parser flag, runTestParser(), detectPatternsMatched() functions
+
+### Usage examples:
+```bash
+# Test specific filenames
+./scanner --test-parser "The.Matrix.1999.1080p.BluRay.mkv" "2001.A.Space.Odyssey.1968.mkv"
+
+# Read from stdin
+echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
+```
+
+### Test cases verified:
+- `The.Matrix.1999.1080p.BluRay.x264-GROUP.mkv` -> Title: 'The Matrix', Year: 1999, Patterns: resolution, year, quality, codec, release-group ✓
+- `2001.A.Space.Odyssey.1968.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.WEB-DL.mkv` -> Title: '1917', Year: 2019, Patterns: year, quality, release-group ✓
+- `Movie.2020.Extended.Cut.1080p.mkv` -> Title: 'Movie', Year: 2020, Patterns: resolution, year, edition, release-group ✓
+- `.mkv` (empty title) -> Exit code: 1 ✓
+- Stdin input works correctly ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests total in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-018 (Parse image URLs from NFO files) is the next logical step
+- The --test-parser flag is handled early in main() before any config loading or scanning
+- Pattern detection uses inline regex matching to avoid coupling with the scanner package's internal patterns
+- The detectPatternsMatched() function returns a comma-separated list of pattern categories for debugging purposes
+

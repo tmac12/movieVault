@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/marco/movieVault/internal/config"
@@ -25,10 +28,17 @@ var (
 	dryRun       = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
 	verbose      = flag.Bool("verbose", false, "Show detailed logging")
 	clearCache   = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
+	testParser   = flag.Bool("test-parser", false, "Test title extraction without running full scan")
 )
 
 func main() {
 	flag.Parse()
+
+	// Handle --test-parser flag (US-017)
+	if *testParser {
+		exitCode := runTestParser()
+		os.Exit(exitCode)
+	}
 
 	// Setup structured logger
 	logLevel := slog.LevelInfo
@@ -485,6 +495,111 @@ func mergeMovieData(nfoMovie, tmdbMovie *writer.Movie) *writer.Movie {
 	}
 
 	return merged
+}
+
+// runTestParser tests title extraction on filenames without running a full scan (US-017)
+// Returns exit code: 0 if all extractions produced valid titles, 1 if any produced empty title
+func runTestParser() int {
+	filenames := flag.Args()
+
+	// If no arguments provided, read from stdin
+	if len(filenames) == 0 {
+		stdinReader := bufio.NewScanner(os.Stdin)
+		for stdinReader.Scan() {
+			line := stdinReader.Text()
+			if line != "" {
+				filenames = append(filenames, line)
+			}
+		}
+		if err := stdinReader.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading from stdin: %v\n", err)
+			return 1
+		}
+	}
+
+	if len(filenames) == 0 {
+		fmt.Fprintln(os.Stderr, "Usage: scanner --test-parser <filename> [filename2] ...")
+		fmt.Fprintln(os.Stderr, "       echo 'filename.mkv' | scanner --test-parser")
+		return 1
+	}
+
+	hasEmptyTitle := false
+
+	for _, filename := range filenames {
+		title, year := scanner.ExtractTitleAndYear(filename)
+		slug := scanner.GenerateSlug(title, year)
+
+		// Detect which patterns matched
+		patternsMatched := detectPatternsMatched(filename)
+
+		fmt.Printf("Filename: %s\n", filename)
+		fmt.Printf("  Title: %s\n", title)
+		if year > 0 {
+			fmt.Printf("  Year: %d\n", year)
+		} else {
+			fmt.Printf("  Year: (not found)\n")
+		}
+		fmt.Printf("  Slug: %s\n", slug)
+		if len(patternsMatched) > 0 {
+			fmt.Printf("  Patterns matched: %s\n", patternsMatched)
+		} else {
+			fmt.Printf("  Patterns matched: (none)\n")
+		}
+		fmt.Println()
+
+		if title == "" {
+			hasEmptyTitle = true
+		}
+	}
+
+	if hasEmptyTitle {
+		return 1
+	}
+	return 0
+}
+
+// detectPatternsMatched returns a comma-separated list of pattern categories that matched
+func detectPatternsMatched(filename string) string {
+	var patterns []string
+
+	// Remove extension for pattern matching (same as ExtractTitleAndYear)
+	name := filename
+	if idx := len(name) - len(filepath.Ext(name)); idx > 0 {
+		name = name[:idx]
+	}
+
+	// Check each pattern category
+	if matched, _ := regexp.MatchString(`(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`, name); matched {
+		patterns = append(patterns, "resolution")
+	}
+	if matched, _ := regexp.MatchString(`(?i)[\[\(](\d{4})[\]\)]`, name); matched {
+		patterns = append(patterns, "year-bracketed")
+	} else if matched, _ := regexp.MatchString(`\d{4}`, name); matched {
+		patterns = append(patterns, "year")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\b(BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF)\b`, name); matched {
+		patterns = append(patterns, "quality")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC|10bit|HDR10|HDR|DV)\b`, name); matched {
+		patterns = append(patterns, "codec")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\b(AAC|AC3|DTS-HD|DTS|TrueHD|FLAC|MP3|DD5\.1|DD2\.0|Atmos|7\.1|5\.1|2\.0|MA)\b`, name); matched {
+		patterns = append(patterns, "audio")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`, name); matched {
+		patterns = append(patterns, "language")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\b(EXTENDED\.?CUT|EXTENDED|DIRECTOR\'?S\.?CUT|DIRECTORS\.?CUT|UNRATED|THEATRICAL|IMAX|REMASTERED|DC|UHD)\b`, name); matched {
+		patterns = append(patterns, "edition")
+	}
+	if matched, _ := regexp.MatchString(`(?i)[-\.]([A-Z0-9]+|MIRCrew|RARBG|YTS|YIFY|SPARKS|GECKOS|AMIABLE|CODEX|SKIDROW|PLAZA|CPY|RELOADED)$`, name); matched {
+		patterns = append(patterns, "release-group")
+	}
+	if matched, _ := regexp.MatchString(`(?i)\[(YTS|YIFY|RARBG|EVO|FGT|SPARKS|GECKOS|[A-Za-z0-9\.]+)\]`, name); matched {
+		patterns = append(patterns, "bracketed-group")
+	}
+
+	return strings.Join(patterns, ", ")
 }
 
 // Helper function to repeat a string (not available in older Go versions)

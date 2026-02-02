@@ -269,8 +269,8 @@
         "Typecheck passes"
       ],
       "priority": 17,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added --test-parser flag to scanner. When used, outputs filename, extracted title, year, slug, and patterns matched for each input. Supports both command line arguments and stdin input. Returns exit code 1 if any extraction produces empty title. Added runTestParser() and detectPatternsMatched() functions to cmd/scanner/main.go."
     },
     {
       "id": "US-018",
