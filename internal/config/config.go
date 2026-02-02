@@ -15,6 +15,7 @@ type Config struct {
 	Output  OutputConfig  `yaml:"output"`
 	Options OptionsConfig `yaml:"options"`
 	Retry   RetryConfig   `yaml:"retry"`
+	Cache   CacheConfig   `yaml:"cache"`
 }
 
 // TMDBConfig holds TMDB API configuration
@@ -52,6 +53,13 @@ type OptionsConfig struct {
 type RetryConfig struct {
 	MaxAttempts      int `yaml:"max_attempts"`
 	InitialBackoffMs int `yaml:"initial_backoff_ms"`
+}
+
+// CacheConfig holds cache behavior configuration
+type CacheConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Path    string `yaml:"path"`
+	TTLDays int    `yaml:"ttl_days"`
 }
 
 // Load reads and parses the configuration file
@@ -96,6 +104,18 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Retry.InitialBackoffMs == 0 {
 		cfg.Retry.InitialBackoffMs = 1000
+	}
+
+	// Set default cache settings
+	// Default Path is always set; if user provides no cache section, we also default Enabled to true.
+	// If user explicitly sets enabled: false with a custom path, we respect that.
+	if cfg.Cache.Path == "" {
+		cfg.Cache.Path = "./data/cache.db"
+		// Only default Enabled to true if the entire cache section was omitted (Path was empty)
+		cfg.Cache.Enabled = true
+	}
+	if cfg.Cache.TTLDays == 0 {
+		cfg.Cache.TTLDays = 30
 	}
 
 	if len(cfg.Scanner.Directories) == 0 {

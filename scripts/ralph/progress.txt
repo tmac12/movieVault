@@ -183,3 +183,33 @@
 - The SQLiteCache requires explicit Close() call to release database connection
 - Parent directory for database file is auto-created if it doesn't exist
 
+## 2026-02-02: US-007 - Add cache config options
+
+### What was done:
+- Added `CacheConfig` struct to `internal/config/config.go` with three fields:
+  - `Enabled bool` (yaml: `enabled`)
+  - `Path string` (yaml: `path`)
+  - `TTLDays int` (yaml: `ttl_days`)
+- Added `Cache` field to main `Config` struct
+- Added default values in `Load()` function:
+  - `Enabled` defaults to true (when cache section not provided)
+  - `Path` defaults to `./data/cache.db`
+  - `TTLDays` defaults to 30
+- Updated `config/config.example.yaml` with cache section and descriptive comments
+
+### Files modified:
+- `internal/config/config.go` - Added CacheConfig struct and defaults
+- `config/config.example.yaml` - Added cache section with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-008 (Integrate cache into TMDB client) is the next logical step
+- The config values can be accessed via `cfg.Cache.Enabled`, `cfg.Cache.Path`, and `cfg.Cache.TTLDays`
+- Convert TTLDays to `time.Duration` when passing to cache.Set(): `time.Duration(cfg.Cache.TTLDays) * 24 * time.Hour`
+- The default behavior enables caching - users must explicitly set `enabled: false` to disable
+- If user provides cache section with `enabled: false` and custom path, that is respected
+

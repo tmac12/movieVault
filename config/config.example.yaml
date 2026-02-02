@@ -31,3 +31,8 @@ options:
 retry:
   max_attempts: 3         # Maximum number of retry attempts for transient API errors
   initial_backoff_ms: 1000  # Initial backoff delay in milliseconds (doubles each retry)
+
+cache:
+  enabled: true           # Enable local caching of TMDB API responses
+  path: "./data/cache.db" # Path to SQLite cache database file
+  ttl_days: 30            # Cache entry time-to-live in days (entries expire after this period)

@@ -115,8 +115,8 @@
         "Typecheck passes"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added CacheConfig struct with Enabled, Path, and TTLDays fields. Defaults set in Load() function: Enabled=true, Path=./data/cache.db, TTLDays=30. Updated config.example.yaml with cache section and descriptive comments."
     },
     {
       "id": "US-008",
