@@ -337,14 +337,34 @@ func main() {
 			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
 			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
 
-			// Get poster path from TMDB (we need to search again to get the poster path)
-			searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-			if searchResult != nil && searchResult.PosterPath != "" {
-				if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err != nil {
-					slog.Warn("failed to download cover", "movie", movie.Title, "error", err)
+			coverDownloaded := false
+			coverSource := ""
+
+			// Try NFO poster URL first if enabled (US-020)
+			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
+				if err := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); err != nil {
+					slog.Debug("failed to download cover from nfo url, trying tmdb", "movie", movie.Title, "error", err)
 				} else {
-					slog.Debug("downloaded cover image", "movie", movie.Title)
+					coverDownloaded = true
+					coverSource = "NFO"
 				}
+			}
+
+			// Fall back to TMDB if NFO download failed or not enabled
+			if !coverDownloaded {
+				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
+				if searchResult != nil && searchResult.PosterPath != "" {
+					if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err != nil {
+						slog.Warn("failed to download cover", "movie", movie.Title, "error", err)
+					} else {
+						coverDownloaded = true
+						coverSource = "TMDB"
+					}
+				}
+			}
+
+			if coverDownloaded {
+				slog.Debug("downloaded cover image", "movie", movie.Title, "source", coverSource)
 			}
 		}
 
@@ -353,13 +373,34 @@ func main() {
 			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
 			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
 
-			searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-			if searchResult != nil && searchResult.BackdropPath != "" {
-				if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err != nil {
-					slog.Warn("failed to download backdrop", "movie", movie.Title, "error", err)
+			backdropDownloaded := false
+			backdropSource := ""
+
+			// Try NFO backdrop URL first if enabled (US-020)
+			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
+				if err := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); err != nil {
+					slog.Debug("failed to download backdrop from nfo url, trying tmdb", "movie", movie.Title, "error", err)
 				} else {
-					slog.Debug("downloaded backdrop image", "movie", movie.Title)
+					backdropDownloaded = true
+					backdropSource = "NFO"
 				}
+			}
+
+			// Fall back to TMDB if NFO download failed or not enabled
+			if !backdropDownloaded {
+				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
+				if searchResult != nil && searchResult.BackdropPath != "" {
+					if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err != nil {
+						slog.Warn("failed to download backdrop", "movie", movie.Title, "error", err)
+					} else {
+						backdropDownloaded = true
+						backdropSource = "TMDB"
+					}
+				}
+			}
+
+			if backdropDownloaded {
+				slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", backdropSource)
 			}
 		}
 

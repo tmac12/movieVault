@@ -314,8 +314,8 @@
         "Typecheck passes"
       ],
       "priority": 20,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added DownloadImageFromURL() method to TMDB client that validates URLs are HTTP/HTTPS before downloading. Updated cmd/scanner/main.go cover and backdrop download logic to try NFO URLs first when nfo_download_images is true, falling back to TMDB on failure. Verbose mode logs image source (NFO vs TMDB) via slog.Debug."
     },
     {
       "id": "US-021",

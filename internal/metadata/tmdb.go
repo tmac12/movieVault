@@ -512,3 +512,49 @@ func (c *Client) DownloadImage(imagePath string, outputPath string, imageType st
 
 	return nil
 }
+
+// DownloadImageFromURL downloads an image from an arbitrary URL to a local path (US-020)
+// Used for downloading images from NFO-provided URLs
+func (c *Client) DownloadImageFromURL(imageURL string, outputPath string) error {
+	if imageURL == "" {
+		return fmt.Errorf("image URL is empty")
+	}
+
+	// Validate URL is HTTP or HTTPS (skip local paths like /config/...)
+	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
+		return fmt.Errorf("invalid URL scheme: must be http:// or https://, got: %s", imageURL)
+	}
+
+	// Download image with retry
+	resp, err := c.doRequestWithRetry(imageURL)
+	if err != nil {
+		return fmt.Errorf("failed to download image from URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download image from URL (status %d)", resp.StatusCode)
+	}
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Create output file
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer outFile.Close()
+
+	// Copy image data
+	if _, err := io.Copy(outFile, resp.Body); err != nil {
+		return fmt.Errorf("failed to write image: %w", err)
+	}
+
+	// Rate limiting
+	time.Sleep(c.rateDelay)
+
+	return nil
+}

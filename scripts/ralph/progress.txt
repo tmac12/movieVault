@@ -688,3 +688,35 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - On download failure, fall back to TMDB image download
 - Log image source (NFO vs TMDB) in verbose mode
 
+## 2026-02-02: US-020 - Implement NFO image download with fallback
+
+### What was done:
+- Added `DownloadImageFromURL(imageURL string, outputPath string) error` method to TMDB client in `internal/metadata/tmdb.go`
+  - Validates URL is HTTP or HTTPS (returns error for local paths like /config/...)
+  - Uses existing retry logic via `doRequestWithRetry()`
+  - Same output file handling as `DownloadImage()` (creates output directory, writes file)
+- Updated cover image download logic in `cmd/scanner/main.go`:
+  - When `cfg.Options.NFODownloadImages` is true and `movie.PosterURL` is set, tries NFO URL first
+  - On NFO download failure, falls back to TMDB via existing `SearchMovie` + `DownloadImage` flow
+  - Logs image source (NFO vs TMDB) in verbose mode via `slog.Debug("downloaded cover image", "movie", ..., "source", ...)`
+- Updated backdrop image download logic in `cmd/scanner/main.go`:
+  - Same NFO-first-then-TMDB logic as cover images
+  - Logs image source (NFO vs TMDB) in verbose mode
+- When `nfo_download_images: false` (default), existing TMDB-only behavior is preserved
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added DownloadImageFromURL() method
+- `cmd/scanner/main.go` - Updated cover and backdrop download logic for NFO support
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files for metadata package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-021 (Add watch folder config options) is the next logical step
+- US-021 will add `watch_mode`, `watch_debounce`, and `watch_recursive` config options
+- The NFO image download feature works in conjunction with US-018 (PosterURL/BackdropURL extraction) and US-019 (nfo_download_images config)
+- URL validation ensures only HTTP/HTTPS URLs are attempted, skipping local paths that would fail
+
