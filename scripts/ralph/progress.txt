@@ -531,3 +531,52 @@
 - The year extraction logic needs to distinguish between years in titles vs release years
 - Pattern ordering remains: resolution → year → quality → codec → audio → edition → release groups → brackets
 
+## 2026-02-02: US-016 - Title extraction - handle year-starting titles
+
+### What was done:
+- Implemented smart year extraction to handle movie titles that start with 4-digit years
+- Added `extractLastValidYear()` helper function in `internal/scanner/patterns.go`
+- Year extraction priority order:
+  1. Year in parentheses/brackets - definitely a release year (e.g., "(2020)" or "[2020]")
+  2. Find the LAST year that is followed by quality markers or at end of filename
+- Added new patterns:
+  - `allYearsPattern` - finds all 4-digit numbers in filename
+  - `qualityMarkerCheckPattern` - checks if text after year is a quality marker
+- Year validation restricts matches to range 1888-2050 (1888 = first film)
+- Added comprehensive unit tests to `internal/scanner/patterns_test.go`
+
+### Files modified:
+- `internal/scanner/patterns.go` - Added extractLastValidYear(), allYearsPattern, qualityMarkerCheckPattern
+
+### Files modified:
+- `internal/scanner/patterns_test.go` - Added TestYearStartingTitles with 13 test cases
+
+### Test cases verified:
+- `2001.A.Space.Odyssey.1968.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.1080p.mkv` -> Title: '1917', Year: 2019 ✓
+- `2001.A.Space.Odyssey.1968.BluRay.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.BluRay.x264.mkv` -> Title: '1917', Year: 2019 ✓
+- `1984.1984.1080p.mkv` -> Title: '1984', Year: 1984 ✓
+- `2012.2009.WEB-DL.mkv` -> Title: '2012', Year: 2009 ✓
+- `300.2006.1080p.BluRay.mkv` -> Title: '300', Year: 2006 ✓ (3-digit title, not confused as year)
+- `2001.A.Space.Odyssey.(1968).mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.(2019).mkv` -> Title: '1917', Year: 2019 ✓
+- `2001.A.Space.Odyssey.[1968].mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `The.Matrix.1999.1080p.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+- `Inception.2010.BluRay.mkv` -> Title: 'Inception', Year: 2010 ✓
+- `Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- All previous US-015 edition marker tests continue to pass ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests total)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-017 (Add --test-parser CLI flag) is the next logical step
+- The smart year extraction searches backward from end of filename for valid release years
+- A year is considered valid if followed by quality markers (1080p, BluRay, x264, etc.) or at end of filename
+- Years in parentheses/brackets always take priority as they're the most explicit format
+- The algorithm falls back to the last 4-digit number if no quality markers are found (backwards compatibility)
+

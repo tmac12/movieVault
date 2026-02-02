@@ -253,8 +253,8 @@
         "Typecheck passes"
       ],
       "priority": 16,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented smart year extraction with extractLastValidYear() helper function. Priority order: (1) Year in parentheses/brackets - definitely release year, (2) Find last year followed by quality markers or at end of filename. Added allYearsPattern and qualityMarkerCheckPattern regexes. Year validation restricts to 1888-2050 range. Unit tests added to patterns_test.go covering 2001.A.Space.Odyssey.1968.mkv, 1917.2019.1080p.mkv, and other edge cases. Go build/test/vet all pass."
     },
     {
       "id": "US-017",

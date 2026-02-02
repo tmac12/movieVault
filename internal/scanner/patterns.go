@@ -9,6 +9,13 @@ import (
 
 var (
 	// Patterns to remove from filenames
+	// Year in parentheses or brackets - definitely a release year (US-016)
+	yearInBracketsPattern = regexp.MustCompile(`[\[\(](\d{4})[\]\)]`)
+	// All 4-digit numbers (for finding all potential years) (US-016)
+	allYearsPattern = regexp.MustCompile(`(\d{4})`)
+	// Quality markers pattern for US-016 year detection
+	qualityMarkerCheckPattern = regexp.MustCompile(`(?i)^[\.\s]?(2160p|1080p|1080i|720p|720i|480p|4K|BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF|x264|x265|HEVC|H\.?264|H\.?265|XviD|DivX|AVC|AAC|AC3|DTS|FLAC|EXTENDED|REMASTERED|UNRATED|DIRECTORS|PROPER|REPACK|RERIP)`)
+	// Fallback: any 4-digit number (used only if above patterns don't match)
 	yearPattern = regexp.MustCompile(`[\[\(]?(\d{4})[\]\)]?`)
 	// Resolution markers (US-010)
 	resolutionPattern = regexp.MustCompile(`(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`)
@@ -48,14 +55,18 @@ func ExtractTitleAndYear(filename string) (title string, year int) {
 	// parsed as year "1080" with leftover "p"
 	name = resolutionPattern.ReplaceAllString(name, " ")
 
-	// Extract year if present
-	yearMatches := yearPattern.FindStringSubmatch(name)
+	// US-016: Smart year extraction for titles starting with years
+	// Priority 1: Year in parentheses/brackets - definitely release year (e.g., "(2020)" or "[2020]")
+	yearMatches := yearInBracketsPattern.FindStringSubmatch(name)
 	if len(yearMatches) > 1 {
 		year, _ = strconv.Atoi(yearMatches[1])
+		name = yearInBracketsPattern.ReplaceAllString(name, "")
+	} else {
+		// Priority 2: Find the LAST year that is followed by quality markers or at end
+		// This handles: "2001.A.Space.Odyssey.1968.BluRay" -> 1968 is the release year
+		// This prevents "2001" from being extracted as the year when it's part of the title
+		year, name = extractLastValidYear(name)
 	}
-
-	// Remove year from filename
-	name = yearPattern.ReplaceAllString(name, "")
 
 	// Remove quality markers
 	name = qualityPattern.ReplaceAllString(name, " ")
@@ -97,6 +108,57 @@ func ExtractTitleAndYear(filename string) (title string, year int) {
 	title = strings.TrimSpace(name)
 
 	return title, year
+}
+
+// extractLastValidYear finds the last 4-digit year in the filename that is likely a release year
+// A year is considered valid if:
+// 1. It's at the very end of the filename (after extension removal)
+// 2. It's followed by quality markers (BluRay, x264, etc.)
+// Returns the year and the name with the year removed
+func extractLastValidYear(name string) (int, string) {
+	// Find all 4-digit numbers and their positions
+	matches := allYearsPattern.FindAllStringSubmatchIndex(name, -1)
+	if len(matches) == 0 {
+		return 0, name
+	}
+
+	// Iterate from the last match backward to find a valid release year
+	for i := len(matches) - 1; i >= 0; i-- {
+		match := matches[i]
+		yearStart := match[0]
+		yearEnd := match[1]
+		yearStr := name[yearStart:yearEnd]
+		yearVal, _ := strconv.Atoi(yearStr)
+
+		// Validate it's a reasonable movie year (1888 was first film, future limit ~2030)
+		if yearVal < 1888 || yearVal > 2050 {
+			continue
+		}
+
+		// Check what follows the year
+		afterYear := name[yearEnd:]
+
+		// If nothing follows (year at end), it's likely the release year
+		if strings.TrimSpace(afterYear) == "" {
+			return yearVal, name[:yearStart] + name[yearEnd:]
+		}
+
+		// If followed by quality markers, it's likely the release year
+		if qualityMarkerCheckPattern.MatchString(afterYear) {
+			return yearVal, name[:yearStart] + name[yearEnd:]
+		}
+	}
+
+	// Fallback: if no year was followed by quality markers, use the last one anyway
+	// This maintains backwards compatibility with "Movie.2020.mkv" style names
+	lastMatch := matches[len(matches)-1]
+	yearStr := name[lastMatch[0]:lastMatch[1]]
+	yearVal, _ := strconv.Atoi(yearStr)
+	if yearVal >= 1888 && yearVal <= 2050 {
+		return yearVal, name[:lastMatch[0]] + name[lastMatch[1]:]
+	}
+
+	return 0, name
 }
 
 // GenerateSlug creates a URL-friendly slug from title and year
