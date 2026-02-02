@@ -396,3 +396,44 @@
 - The audioPattern already exists and should be verified against US-013 requirements
 - Keep pattern ordering: resolution → year → quality → codec → audio → etc.
 
+## 2026-02-02: US-013 - Title extraction - remove audio markers
+
+### What was done:
+- Expanded `audioPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC`
+  - New pattern: `AAC|AC3|DTS-HD|DTS|TrueHD|FLAC|MP3|DD5\.1|DD2\.0|Atmos|7\.1|5\.1|2\.0|MA`
+  - Added missing markers: MP3, DD2.0, 5.1, 7.1, 2.0 (standalone channel configurations)
+  - Retained MA for DTS-HD MA compatibility
+- Pattern ordering: `DTS-HD` placed before `DTS` to ensure longest match first
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-013 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded audioPattern with additional audio markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.DTS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AAC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AC3.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DTS-HD.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.TrueHD.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.FLAC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.MP3.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DD5.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DD2.0.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Atmos.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.5.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.7.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.2.0.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-014 (Title extraction - remove release groups) is the next logical step
+- The releaseGroupPattern already exists and should be verified against US-014 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+

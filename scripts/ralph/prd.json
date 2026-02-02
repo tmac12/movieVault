@@ -206,8 +206,8 @@
         "Typecheck passes"
       ],
       "priority": 13,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Expanded audioPattern regex in internal/scanner/patterns.go to include all required audio markers: AAC, AC3, DTS, DTS-HD, TrueHD, FLAC, MP3, DD5.1, DD2.0, Atmos, 5.1, 7.1, 2.0. DTS-HD placed before DTS to ensure longest match. MA retained for DTS-HD MA compatibility. Pattern is case-insensitive via (?i) flag. Go build/vet/test all pass."
     },
     {
       "id": "US-014",

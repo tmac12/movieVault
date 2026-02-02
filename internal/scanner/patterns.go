@@ -18,7 +18,9 @@ var (
 	// Codec markers (US-012)
 	// Includes: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX, 10bit, HDR, HDR10, DV
 	codecPattern = regexp.MustCompile(`(?i)\b(x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC|10bit|HDR10|HDR|DV)\b`)
-	audioPattern        = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC)\b`)
+	// Audio codec markers (US-013)
+	// Includes: AAC, AC3, DTS, DTS-HD, TrueHD, FLAC, MP3, DD5.1, DD2.0, Atmos, 5.1, 7.1, 2.0
+	audioPattern = regexp.MustCompile(`(?i)\b(AAC|AC3|DTS-HD|DTS|TrueHD|FLAC|MP3|DD5\.1|DD2\.0|Atmos|7\.1|5\.1|2\.0|MA)\b`)
 	languagePattern     = regexp.MustCompile(`(?i)\b(ita|eng|spa|fra|deu|jpn|kor|rus|chi|por|pol|nld|swe|nor|dan|fin|tur|ara|heb|tha|vie|ind|msa|hindi|tamil|multi|dual)\b`)
 	subtitlePattern     = regexp.MustCompile(`(?i)\b(sub|subs|subtitle|subtitles|subbed)\b`)
 	releaseGroupPattern = regexp.MustCompile(`(?i)[-\.]([A-Z0-9]+(\.[A-Z]+)*|MIRCrew|RARBG|YTS|YIFY|PublicHD|Tigole|QxR|UTR|ION10|EVO|CMRG|FGT)$`)
