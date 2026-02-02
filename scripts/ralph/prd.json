@@ -284,8 +284,8 @@
         "Typecheck passes"
       ],
       "priority": 18,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added PosterURL and BackdropURL fields to writer.Movie struct (yaml:\"-\" to avoid MDX persistence). Added extractPosterURL() and extractBackdropURL() helper functions to NFO parser. Poster extraction prioritizes 'poster' aspect attribute, falls back to first thumb. Backdrop extraction uses first fanart/thumb URL. Thumb and Fanart fields were already present in types.go."
     },
     {
       "id": "US-019",
@@ -298,8 +298,8 @@
         "Typecheck passes"
       ],
       "priority": 19,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added NFODownloadImages bool field to OptionsConfig struct in internal/config/config.go. Default is false (Go zero value for bool). Updated config/config.example.yaml with nfo_download_images option and comment explaining behavior (tries NFO URLs first, falls back to TMDB)."
     },
     {
       "id": "US-020",

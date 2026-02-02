@@ -47,6 +47,7 @@ type OptionsConfig struct {
 	DownloadBackdrops bool `yaml:"download_backdrops"`
 	UseNFO            bool `yaml:"use_nfo"`
 	NFOFallbackTMDB   bool `yaml:"nfo_fallback_tmdb"`
+	NFODownloadImages bool `yaml:"nfo_download_images"` // Download images from NFO URLs when available (default: false)
 }
 
 // RetryConfig holds retry behavior configuration

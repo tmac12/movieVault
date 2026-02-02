@@ -628,3 +628,63 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - Pattern detection uses inline regex matching to avoid coupling with the scanner package's internal patterns
 - The detectPatternsMatched() function returns a comma-separated list of pattern categories for debugging purposes
 
+## 2026-02-02: US-018 - Parse image URLs from NFO files
+
+### What was done:
+- Added `PosterURL` and `BackdropURL` fields to `writer.Movie` struct in `internal/writer/models.go`
+  - Fields use `yaml:"-"` tag to prevent persistence to MDX files (used during processing only)
+- Updated `ConvertToMovie()` in `internal/metadata/nfo/parser.go` to extract image URLs
+- Added `extractPosterURL()` helper function:
+  - Priority: looks for thumb with "poster" aspect attribute first
+  - Fallback: uses first thumb element with a URL
+  - Trims whitespace from extracted URLs
+- Added `extractBackdropURL()` helper function:
+  - Extracts first URL from `<fanart><thumb>` elements
+  - Returns empty string if no fanart section or no thumbs with URLs
+- NFO types.go already had Thumbs and Fanart fields defined - no changes needed there
+
+### Files modified:
+- `internal/writer/models.go` - Added PosterURL and BackdropURL fields
+- `internal/metadata/nfo/parser.go` - Added extractPosterURL(), extractBackdropURL() helper functions, updated ConvertToMovie()
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-019 (Add NFO image download config option) is the next logical step
+- US-019 will add `nfo_download_images` config option with default false
+- US-020 will use PosterURL and BackdropURL to actually download images when enabled
+- The URLs are extracted but not downloaded in this US - that's US-020
+- URLs may be local paths (e.g., /config/...) or HTTP URLs - US-020 will need to validate
+
+## 2026-02-02: US-019 - Add NFO image download config option
+
+### What was done:
+- Added `NFODownloadImages bool` field to `OptionsConfig` struct in `internal/config/config.go`
+  - yaml tag: `nfo_download_images`
+  - Default value: false (Go zero value for bool - preserves existing TMDB-only behavior)
+- Updated `config/config.example.yaml` with the new option
+  - Added `nfo_download_images: false` line
+  - Added comment explaining behavior: tries NFO URLs first, falls back to TMDB
+
+### Files modified:
+- `internal/config/config.go` - Added NFODownloadImages field to OptionsConfig struct
+- `config/config.example.yaml` - Added nfo_download_images option with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-020 (Implement NFO image download with fallback) is the next logical step
+- US-020 will implement the actual download logic using `cfg.Options.NFODownloadImages` config value
+- When `nfo_download_images: true`, attempt download from PosterURL/BackdropURL first (from NFO)
+- Must validate URLs are HTTP/HTTPS (skip local paths like /config/...)
+- On download failure, fall back to TMDB image download
+- Log image source (NFO vs TMDB) in verbose mode
+
