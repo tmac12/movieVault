@@ -28,3 +28,28 @@
 - The method reuses existing GetMovieDetails and GetMovieCredits methods to maintain consistency
 - ErrMovieNotFound can be checked with `errors.Is(err, metadata.ErrMovieNotFound)` for fallback logic
 
+## 2026-02-02: US-002 - Use TMDB ID from NFO for direct lookup
+
+### What was done:
+- Modified `cmd/scanner/main.go` to use direct TMDB ID lookup when NFO contains a valid TMDBID
+- Added `errors` import for proper sentinel error checking
+- When NFO contains TMDBID > 0, calls `GetMovieByID` instead of `GetFullMovieData`
+- If `GetMovieByID` returns 404 error (checked via `errors.Is(err, metadata.ErrMovieNotFound)`), falls back to title/year search
+- If TMDBID is 0 or missing, uses existing title/year search behavior
+- Added verbose logging for TMDB lookup method ("direct ID", "search", "search (fallback from direct)")
+
+### Files modified:
+- `cmd/scanner/main.go` - Added TMDB ID direct lookup integration with NFO processing
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: npm typecheck/test not available in website - environmental esbuild ARM64 compatibility issue unrelated to Go code changes
+
+### Notes for next developer:
+- US-003 (Add retry package with exponential backoff) is the next logical step
+- The direct lookup improves metadata accuracy by avoiding title search ambiguity when TMDB ID is known
+- Verbose mode now shows which lookup method was used for debugging
+- The mergeMovieData function is still used to combine NFO data with TMDB data (NFO takes priority)
+

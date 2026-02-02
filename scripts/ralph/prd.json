@@ -32,8 +32,8 @@
         "Typecheck passes"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Integrated GetMovieByID into NFO processing flow. When NFO contains TMDBID > 0, uses direct lookup via GetMovieByID. Falls back to search on 404 error using errors.Is(). Verbose mode logs lookup method (direct ID, search, search fallback from direct)."
     },
     {
       "id": "US-003",

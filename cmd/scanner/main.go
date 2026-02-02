@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -156,14 +157,34 @@ func main() {
 					slog.Debug("nfo error, falling back to tmdb", "error", err)
 					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 					metadataSource = "TMDB"
+					slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
 				}
 			} else {
 				metadataSource = "NFO"
 
-				// Check for incomplete NFO data
-				if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
-					slog.Debug("nfo incomplete, enriching with tmdb")
+				// Check if NFO has TMDB ID for direct lookup
+				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
+					slog.Debug("nfo contains tmdb id, using direct lookup", "tmdb_id", movie.TMDBID)
+					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
+					if tmdbErr != nil {
+						// Check if movie not found (404) - fall back to search
+						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
+							slog.Debug("tmdb id not found, falling back to search", "tmdb_id", movie.TMDBID)
+							tmdbMovie, tmdbErr = tmdbClient.GetFullMovieData(file.Title, file.Year)
+							slog.Debug("tmdb lookup method", "method", "search (fallback from direct)", "title", file.Title, "year", file.Year)
+						}
+					} else {
+						slog.Debug("tmdb lookup method", "method", "direct ID", "tmdb_id", movie.TMDBID)
+					}
+					if tmdbErr == nil && tmdbMovie != nil {
+						movie = mergeMovieData(movie, tmdbMovie)
+						metadataSource = "NFO+TMDB"
+					}
+				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
+					// Check for incomplete NFO data (no TMDB ID available)
+					slog.Debug("nfo incomplete, enriching with tmdb search")
 					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
+					slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
 						metadataSource = "NFO+TMDB"
@@ -174,6 +195,7 @@ func main() {
 			// NFO disabled, use TMDB only
 			movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 			metadataSource = "TMDB"
+			slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
 		}
 
 		if err != nil {
