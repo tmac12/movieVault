@@ -13,6 +13,10 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  # Watch mode settings (US-021) - monitor directories for new/changed files
+  watch_mode: false        # Enable watch mode to continuously monitor directories (default: false)
+  watch_debounce: 30       # Seconds to wait after file change before processing (default: 30)
+  watch_recursive: true    # Watch subdirectories recursively (default: true)
 
 output:
   mdx_dir: "./website/src/content/movies"     # Where to write MDX files

@@ -26,9 +26,12 @@ type TMDBConfig struct {
 
 // ScannerConfig holds scanner settings
 type ScannerConfig struct {
-	Directories []string `yaml:"directories"`
-	Extensions  []string `yaml:"extensions"`
-	ExcludeDirs []string `yaml:"exclude_dirs"`
+	Directories    []string `yaml:"directories"`
+	Extensions     []string `yaml:"extensions"`
+	ExcludeDirs    []string `yaml:"exclude_dirs"`
+	WatchMode      bool     `yaml:"watch_mode"`      // Enable watch mode to monitor directories for changes (default: false)
+	WatchDebounce  int      `yaml:"watch_debounce"`  // Seconds to wait after file change before processing (default: 30)
+	WatchRecursive *bool    `yaml:"watch_recursive"` // Watch subdirectories recursively (default: true, use pointer to detect nil)
 }
 
 // OutputConfig holds output directory settings
@@ -117,6 +120,17 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Cache.TTLDays == 0 {
 		cfg.Cache.TTLDays = 30
+	}
+
+	// Set default watch settings
+	// WatchMode defaults to false (Go zero value) - no explicit set needed
+	if cfg.Scanner.WatchDebounce == 0 {
+		cfg.Scanner.WatchDebounce = 30
+	}
+	// WatchRecursive defaults to true. We use *bool to distinguish "not set" from "explicitly false".
+	if cfg.Scanner.WatchRecursive == nil {
+		defaultTrue := true
+		cfg.Scanner.WatchRecursive = &defaultTrue
 	}
 
 	if len(cfg.Scanner.Directories) == 0 {

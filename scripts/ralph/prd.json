@@ -329,8 +329,8 @@
         "Typecheck passes"
       ],
       "priority": 21,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added WatchMode (bool), WatchDebounce (int), and WatchRecursive (*bool) fields to ScannerConfig struct. WatchRecursive uses pointer type to distinguish nil from false, defaulting to true. WatchDebounce defaults to 30 seconds. Updated config.example.yaml with all watch options and comments."
     },
     {
       "id": "US-022",

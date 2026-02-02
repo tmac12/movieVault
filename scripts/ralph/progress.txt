@@ -720,3 +720,35 @@ echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
 - The NFO image download feature works in conjunction with US-018 (PosterURL/BackdropURL extraction) and US-019 (nfo_download_images config)
 - URL validation ensures only HTTP/HTTPS URLs are attempted, skipping local paths that would fail
 
+## 2026-02-02: US-021 - Add watch folder config options
+
+### What was done:
+- Added three new watch-related fields to `ScannerConfig` struct in `internal/config/config.go`:
+  - `WatchMode bool` (yaml: `watch_mode`) - Enable watch mode to monitor directories (default: false)
+  - `WatchDebounce int` (yaml: `watch_debounce`) - Seconds to wait after file change (default: 30)
+  - `WatchRecursive *bool` (yaml: `watch_recursive`) - Watch subdirectories recursively (default: true)
+- Used pointer type `*bool` for `WatchRecursive` to distinguish "not set" (nil) from "explicitly false"
+  - This allows defaulting to `true` per requirements while still allowing explicit `false` override
+- Added default value handling in `Load()` function:
+  - `WatchDebounce` defaults to 30 if 0
+  - `WatchRecursive` defaults to `true` if nil
+  - `WatchMode` defaults to false (Go zero value, no explicit handling needed)
+- Updated `config/config.example.yaml` with watch options section and comments
+
+### Files modified:
+- `internal/config/config.go` - Added watch fields to ScannerConfig, added defaults in Load()
+- `config/config.example.yaml` - Added watch_mode, watch_debounce, watch_recursive options with comments
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-022 (Implement basic watch folder functionality) is the next logical step
+- US-022 will create `internal/scanner/watcher.go` and add `--watch` flag to scanner
+- Will use `fsnotify` library for file system events
+- The config values can be accessed via `cfg.Scanner.WatchMode`, `cfg.Scanner.WatchDebounce`, and `*cfg.Scanner.WatchRecursive`
+- Remember to dereference `WatchRecursive` pointer when using: `*cfg.Scanner.WatchRecursive`
+
