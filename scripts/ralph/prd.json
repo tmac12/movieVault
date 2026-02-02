@@ -80,8 +80,8 @@
         "Typecheck passes"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added doRequestWithRetry helper method to TMDB client that wraps HTTP calls with retry.Retry(). Created NewClientWithConfig() to accept full configuration including retry settings. Scanner now passes cfg.Retry.MaxAttempts and cfg.Retry.InitialBackoffMs to client. Added RetryLogFunc callback for verbose mode logging of retry attempts with attempt number, max attempts, and backoff duration. Rate limited (429) and 5xx errors trigger retries with doubled backoff for 429."
     },
     {
       "id": "US-006",

@@ -116,8 +116,26 @@ func main() {
 		return
 	}
 
-	// Create TMDB client
-	tmdbClient := metadata.NewClient(cfg.TMDB.APIKey, cfg.TMDB.Language, cfg.Options.RateLimitDelay)
+	// Create TMDB client with retry configuration
+	var retryLogFunc metadata.RetryLogFunc
+	if *verbose {
+		retryLogFunc = func(attempt int, maxAttempts int, backoff time.Duration, err error) {
+			slog.Debug("retrying tmdb request",
+				"attempt", attempt,
+				"max_attempts", maxAttempts,
+				"backoff_ms", backoff.Milliseconds(),
+				"error", err.Error(),
+			)
+		}
+	}
+	tmdbClient := metadata.NewClientWithConfig(metadata.ClientConfig{
+		APIKey:           cfg.TMDB.APIKey,
+		Language:         cfg.TMDB.Language,
+		RateLimitDelayMs: cfg.Options.RateLimitDelay,
+		MaxAttempts:      cfg.Retry.MaxAttempts,
+		InitialBackoffMs: cfg.Retry.InitialBackoffMs,
+		RetryLogFunc:     retryLogFunc,
+	})
 
 	// Create MDX writer
 	mdxWriter := writer.NewMDXWriter(cfg.Output.MDXDir, cfg.Output.CoversDir)

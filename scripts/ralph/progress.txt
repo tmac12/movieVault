@@ -111,3 +111,37 @@
 - Convert `InitialBackoffMs` to `time.Duration` when passing to retry.Retry(): `time.Duration(cfg.Retry.InitialBackoffMs) * time.Millisecond`
 - The TMDB client will need to accept config or retry parameters to use these values
 
+## 2026-02-02: US-005 - Integrate retry logic into TMDB client
+
+### What was done:
+- Added `doRequestWithRetry(requestURL string) (*http.Response, error)` helper method to TMDB client
+  - Wraps HTTP GET requests with `retry.Retry()` from the retry package
+  - Handles both network errors and HTTP status codes (5xx, 429)
+  - Logs retry attempts via callback when provided
+  - Rate-limited (429) errors use double backoff
+- Added `RetryLogFunc` type for verbose logging callback
+- Added `ClientConfig` struct with full configuration options:
+  - `APIKey`, `Language`, `RateLimitDelayMs`
+  - `MaxAttempts`, `InitialBackoffMs`
+  - `RetryLogFunc` callback
+- Added `NewClientWithConfig(cfg ClientConfig) *Client` constructor
+- Updated existing `NewClient()` to delegate to `NewClientWithConfig()` with defaults
+- Wrapped HTTP calls in `SearchMovie`, `GetMovieDetails`, `GetMovieCredits`, and `DownloadImage` with retry logic
+- Updated `cmd/scanner/main.go` to use `NewClientWithConfig()` with retry config from loaded configuration
+- Added verbose mode logging callback that logs retry attempts with attempt number, max attempts, backoff duration, and error
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added retry integration, ClientConfig, NewClientWithConfig, doRequestWithRetry
+- `cmd/scanner/main.go` - Updated to use NewClientWithConfig with retry config and verbose logging
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-006 (Create SQLite cache package) is the next logical step
+- The retry logic is now fully integrated - all TMDB API calls will automatically retry on transient failures
+- Verbose mode (`--verbose` flag) will show retry attempts in the log output
+- The `NewClient()` function is preserved for backward compatibility with default retry settings (3 attempts, 1000ms initial backoff)
+

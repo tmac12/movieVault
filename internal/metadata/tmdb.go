@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marco/movieVault/internal/retry"
 	"github.com/marco/movieVault/internal/writer"
 )
 
@@ -22,25 +23,110 @@ const (
 	backdropSize    = "w1280"
 )
 
+// RetryLogFunc is a callback for logging retry attempts
+type RetryLogFunc func(attempt int, maxAttempts int, backoff time.Duration, err error)
+
 // Client represents a TMDB API client
 type Client struct {
-	apiKey     string
-	language   string
-	httpClient *http.Client
-	rateDelay  time.Duration
+	apiKey         string
+	language       string
+	httpClient     *http.Client
+	rateDelay      time.Duration
+	maxAttempts    int
+	initialBackoff time.Duration
+	retryLogFunc   RetryLogFunc
+}
+
+// ClientConfig holds configuration for the TMDB client
+type ClientConfig struct {
+	APIKey           string
+	Language         string
+	RateLimitDelayMs int
+	MaxAttempts      int
+	InitialBackoffMs int
+	RetryLogFunc     RetryLogFunc
 }
 
 // NewClient creates a new TMDB API client
 func NewClient(apiKey string, language string, rateLimitDelayMs int) *Client {
-	if language == "" {
-		language = "en-US"
+	return NewClientWithConfig(ClientConfig{
+		APIKey:           apiKey,
+		Language:         language,
+		RateLimitDelayMs: rateLimitDelayMs,
+		MaxAttempts:      3,
+		InitialBackoffMs: 1000,
+	})
+}
+
+// NewClientWithConfig creates a new TMDB API client with full configuration
+func NewClientWithConfig(cfg ClientConfig) *Client {
+	if cfg.Language == "" {
+		cfg.Language = "en-US"
+	}
+	if cfg.MaxAttempts <= 0 {
+		cfg.MaxAttempts = 3
+	}
+	if cfg.InitialBackoffMs <= 0 {
+		cfg.InitialBackoffMs = 1000
 	}
 	return &Client{
-		apiKey:     apiKey,
-		language:   language,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		rateDelay:  time.Duration(rateLimitDelayMs) * time.Millisecond,
+		apiKey:         cfg.APIKey,
+		language:       cfg.Language,
+		httpClient:     &http.Client{Timeout: 30 * time.Second},
+		rateDelay:      time.Duration(cfg.RateLimitDelayMs) * time.Millisecond,
+		maxAttempts:    cfg.MaxAttempts,
+		initialBackoff: time.Duration(cfg.InitialBackoffMs) * time.Millisecond,
+		retryLogFunc:   cfg.RetryLogFunc,
 	}
+}
+
+// doRequestWithRetry executes an HTTP GET request with retry logic
+func (c *Client) doRequestWithRetry(requestURL string) (*http.Response, error) {
+	var resp *http.Response
+	var lastErr error
+	attempt := 0
+
+	err := retry.Retry(func() error {
+		attempt++
+		var reqErr error
+		resp, reqErr = c.httpClient.Get(requestURL)
+		if reqErr != nil {
+			lastErr = reqErr
+			// Log retry attempt if callback provided
+			if c.retryLogFunc != nil && attempt < c.maxAttempts {
+				backoff := c.initialBackoff * time.Duration(1<<(attempt-1))
+				if retry.IsRateLimited(reqErr) {
+					backoff *= 2
+				}
+				c.retryLogFunc(attempt, c.maxAttempts, backoff, reqErr)
+			}
+			return reqErr
+		}
+
+		// Check for retryable HTTP status codes
+		if resp.StatusCode >= 500 || resp.StatusCode == 429 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			statusErr := fmt.Errorf("TMDB API error (status %d): %s", resp.StatusCode, string(body))
+			lastErr = statusErr
+			// Log retry attempt if callback provided
+			if c.retryLogFunc != nil && attempt < c.maxAttempts {
+				backoff := c.initialBackoff * time.Duration(1<<(attempt-1))
+				if resp.StatusCode == 429 {
+					backoff *= 2
+				}
+				c.retryLogFunc(attempt, c.maxAttempts, backoff, statusErr)
+			}
+			return statusErr
+		}
+
+		return nil
+	}, c.maxAttempts, c.initialBackoff)
+
+	if err != nil {
+		return nil, lastErr
+	}
+	return resp, nil
 }
 
 // SearchMovie searches for a movie by title and optional year
@@ -55,9 +141,9 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 	params.Set("language", c.language)
 	params.Set("page", "1")
 
-	// Make request
+	// Make request with retry
 	searchURL := fmt.Sprintf("%s/search/movie?%s", tmdbAPIBaseURL, params.Encode())
-	resp, err := c.httpClient.Get(searchURL)
+	resp, err := c.doRequestWithRetry(searchURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search movie: %w", err)
 	}
@@ -92,7 +178,7 @@ func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 	params.Set("language", c.language)
 
 	detailsURL := fmt.Sprintf("%s/movie/%d?%s", tmdbAPIBaseURL, tmdbID, params.Encode())
-	resp, err := c.httpClient.Get(detailsURL)
+	resp, err := c.doRequestWithRetry(detailsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get movie details: %w", err)
 	}
@@ -121,7 +207,7 @@ func (c *Client) GetMovieCredits(tmdbID int) (*TMDBCreditsResponse, error) {
 	params.Set("language", c.language)
 
 	creditsURL := fmt.Sprintf("%s/movie/%d/credits?%s", tmdbAPIBaseURL, tmdbID, params.Encode())
-	resp, err := c.httpClient.Get(creditsURL)
+	resp, err := c.doRequestWithRetry(creditsURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get movie credits: %w", err)
 	}
@@ -299,8 +385,8 @@ func (c *Client) DownloadImage(imagePath string, outputPath string, imageType st
 	// Build image URL
 	imageURL := fmt.Sprintf("%s/%s%s", tmdbImageBaseURL, size, imagePath)
 
-	// Download image
-	resp, err := c.httpClient.Get(imageURL)
+	// Download image with retry
+	resp, err := c.doRequestWithRetry(imageURL)
 	if err != nil {
 		return fmt.Errorf("failed to download image: %w", err)
 	}
