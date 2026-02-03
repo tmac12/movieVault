@@ -1068,3 +1068,55 @@ time=... level=INFO msg="cache statistics" hits=45 misses=5 hit_rate="90.0%" ent
 - The hit/miss counters reset each session since SQLiteCache is created fresh each run
 - Consider persisting statistics to database in future if cross-session metrics needed
 
+## 2026-02-03: US-027 - Improve verbose logging
+
+### What was done:
+- Improved verbose logging in `cmd/scanner/main.go` with consistent structured log format
+- All debug logs now include `file` field for context (filename being processed)
+- Metadata lookup logs now show:
+  - `nfo_status`: found, not_found_or_error, or disabled
+  - `nfo_error`: error message when NFO fails
+  - `action`: what happens next (fallback_to_tmdb, tmdb_search)
+  - `nfo_title`, `nfo_tmdb_id`: extracted NFO data when found
+- TMDB enrichment logs now show:
+  - `method`: direct_id_lookup, search, search_fallback
+  - `reason`: why a particular method was chosen (direct_id_not_found, nfo_incomplete)
+  - `tmdb_id`, `search_title`, `search_year`: relevant IDs/parameters
+- Metadata merge logs show fields kept from NFO vs filled from TMDB
+- Image download logs use consistent format:
+  - `image download attempt`: file, movie, image_type (cover/backdrop), source (NFO/TMDB), url
+  - `image download failed`: includes error and action (fallback_to_tmdb)
+  - `image download success`: includes file, movie, image_type, source, path
+  - `image not available`: when TMDB has no poster/backdrop path
+- Updated `createFileHandler()` (watch mode) with same consistent logging patterns
+- Retry logging was already implemented via `RetryLogFunc` callback (from US-005)
+- Cache logging was already implemented via `CacheLogFunc` callback (from US-008)
+
+### Files modified:
+- `cmd/scanner/main.go` - Improved verbose logging throughout main scan loop and createFileHandler
+
+### Log message categories:
+| Category | Message | Fields |
+|----------|---------|--------|
+| Metadata | `metadata lookup` | file, nfo_status, nfo_error, action, nfo_title, nfo_tmdb_id |
+| TMDB | `tmdb enrichment` | file, method, reason, tmdb_id, search_title, search_year |
+| TMDB | `tmdb lookup completed` | file, lookup_method |
+| Merge | `metadata merge` | file, nfo_fields_kept, tmdb_fields_filled |
+| Image | `image download attempt` | file, movie, image_type, source, url |
+| Image | `image download failed` | file, movie, image_type, source, error, action |
+| Image | `image download success` | file, movie, image_type, source, path |
+| Image | `image not available` | file, movie, image_type, reason |
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-028 (Add configuration validation) is the next logical step
+- US-028 will add validation for new config options on load
+- The verbose logging is now consistent across main scan and watch mode
+- All debug logs include `file` field to correlate messages with specific files being processed
+- Cache/retry logging callbacks remain in place from previous implementations
+

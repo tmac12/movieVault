@@ -282,7 +282,8 @@ func main() {
 		var err error
 		var metadataSource string
 
-		// Try NFO first if enabled
+		// Try NFO first if enabled (US-027: verbose logging improvements)
+		var tmdbLookupMethod string
 		if cfg.Options.UseNFO {
 			nfoParser := nfo.NewParser()
 			movie, err = nfoParser.GetMovieFromNFO(file.Path)
@@ -290,48 +291,101 @@ func main() {
 			if err != nil {
 				// NFO not found or parse error - fall back to TMDB if enabled
 				if cfg.Options.NFOFallbackTMDB {
-					slog.Debug("nfo error, falling back to tmdb", "error", err)
+					slog.Debug("metadata lookup",
+						"file", file.FileName,
+						"nfo_status", "not_found_or_error",
+						"nfo_error", err.Error(),
+						"action", "fallback_to_tmdb",
+					)
 					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 					metadataSource = "TMDB"
-					slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
+					tmdbLookupMethod = "search"
 				}
 			} else {
 				metadataSource = "NFO"
+				slog.Debug("metadata lookup",
+					"file", file.FileName,
+					"nfo_status", "found",
+					"nfo_title", movie.Title,
+					"nfo_tmdb_id", movie.TMDBID,
+				)
 
 				// Check if NFO has TMDB ID for direct lookup
 				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
-					slog.Debug("nfo contains tmdb id, using direct lookup", "tmdb_id", movie.TMDBID)
+					slog.Debug("tmdb enrichment",
+						"file", file.FileName,
+						"method", "direct_id_lookup",
+						"tmdb_id", movie.TMDBID,
+					)
 					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
 					if tmdbErr != nil {
 						// Check if movie not found (404) - fall back to search
 						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
-							slog.Debug("tmdb id not found, falling back to search", "tmdb_id", movie.TMDBID)
+							slog.Debug("tmdb enrichment",
+								"file", file.FileName,
+								"method", "search_fallback",
+								"reason", "direct_id_not_found",
+								"tmdb_id", movie.TMDBID,
+								"search_title", file.Title,
+								"search_year", file.Year,
+							)
 							tmdbMovie, tmdbErr = tmdbClient.GetFullMovieData(file.Title, file.Year)
-							slog.Debug("tmdb lookup method", "method", "search (fallback from direct)", "title", file.Title, "year", file.Year)
+							tmdbLookupMethod = "search (fallback from direct)"
 						}
 					} else {
-						slog.Debug("tmdb lookup method", "method", "direct ID", "tmdb_id", movie.TMDBID)
+						tmdbLookupMethod = "direct ID"
 					}
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
 						metadataSource = "NFO+TMDB"
+						slog.Debug("metadata merge",
+							"file", file.FileName,
+							"nfo_fields_kept", "title,year,rating,genres,director,cast",
+							"tmdb_fields_filled", "missing_fields_only",
+						)
 					}
 				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
 					// Check for incomplete NFO data (no TMDB ID available)
-					slog.Debug("nfo incomplete, enriching with tmdb search")
+					slog.Debug("tmdb enrichment",
+						"file", file.FileName,
+						"method", "search",
+						"reason", "nfo_incomplete",
+						"missing_title", movie.Title == "",
+						"missing_year", movie.ReleaseYear == 0,
+						"search_title", file.Title,
+						"search_year", file.Year,
+					)
 					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
-					slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
+					tmdbLookupMethod = "search"
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
 						metadataSource = "NFO+TMDB"
+						slog.Debug("metadata merge",
+							"file", file.FileName,
+							"nfo_fields_kept", "available_nfo_data",
+							"tmdb_fields_filled", "missing_fields",
+						)
 					}
 				}
 			}
 		} else {
 			// NFO disabled, use TMDB only
+			slog.Debug("metadata lookup",
+				"file", file.FileName,
+				"nfo_status", "disabled",
+				"action", "tmdb_search",
+			)
 			movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 			metadataSource = "TMDB"
-			slog.Debug("tmdb lookup method", "method", "search", "title", file.Title, "year", file.Year)
+			tmdbLookupMethod = "search"
+		}
+
+		// Log the final TMDB lookup method used (US-027)
+		if tmdbLookupMethod != "" {
+			slog.Debug("tmdb lookup completed",
+				"file", file.FileName,
+				"lookup_method", tmdbLookupMethod,
+			)
 		}
 
 		if err != nil {
@@ -375,7 +429,7 @@ func main() {
 			"genres", movie.Genres,
 		)
 
-		// Download cover image
+		// Download cover image (US-027: improved verbose logging)
 		if cfg.Options.DownloadCovers {
 			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
 			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
@@ -385,8 +439,22 @@ func main() {
 
 			// Try NFO poster URL first if enabled (US-020)
 			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", "NFO",
+					"url", movie.PosterURL,
+				)
 				if err := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); err != nil {
-					slog.Debug("failed to download cover from nfo url, trying tmdb", "movie", movie.Title, "error", err)
+					slog.Debug("image download failed",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "cover",
+						"source", "NFO",
+						"error", err.Error(),
+						"action", "fallback_to_tmdb",
+					)
 				} else {
 					coverDownloaded = true
 					coverSource = "NFO"
@@ -395,23 +463,48 @@ func main() {
 
 			// Fall back to TMDB if NFO download failed or not enabled
 			if !coverDownloaded {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", "TMDB",
+				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.PosterPath != "" {
 					if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err != nil {
-						slog.Warn("failed to download cover", "movie", movie.Title, "error", err)
+						slog.Warn("image download failed",
+							"file", file.FileName,
+							"movie", movie.Title,
+							"image_type", "cover",
+							"source", "TMDB",
+							"error", err,
+						)
 					} else {
 						coverDownloaded = true
 						coverSource = "TMDB"
 					}
+				} else {
+					slog.Debug("image not available",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "cover",
+						"reason", "no_poster_path_in_tmdb",
+					)
 				}
 			}
 
 			if coverDownloaded {
-				slog.Debug("downloaded cover image", "movie", movie.Title, "source", coverSource)
+				slog.Debug("image download success",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", coverSource,
+					"path", coverPath,
+				)
 			}
 		}
 
-		// Download backdrop image
+		// Download backdrop image (US-027: improved verbose logging)
 		if cfg.Options.DownloadBackdrops {
 			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
 			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
@@ -421,8 +514,22 @@ func main() {
 
 			// Try NFO backdrop URL first if enabled (US-020)
 			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", "NFO",
+					"url", movie.BackdropURL,
+				)
 				if err := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); err != nil {
-					slog.Debug("failed to download backdrop from nfo url, trying tmdb", "movie", movie.Title, "error", err)
+					slog.Debug("image download failed",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "backdrop",
+						"source", "NFO",
+						"error", err.Error(),
+						"action", "fallback_to_tmdb",
+					)
 				} else {
 					backdropDownloaded = true
 					backdropSource = "NFO"
@@ -431,19 +538,44 @@ func main() {
 
 			// Fall back to TMDB if NFO download failed or not enabled
 			if !backdropDownloaded {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", "TMDB",
+				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.BackdropPath != "" {
 					if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err != nil {
-						slog.Warn("failed to download backdrop", "movie", movie.Title, "error", err)
+						slog.Warn("image download failed",
+							"file", file.FileName,
+							"movie", movie.Title,
+							"image_type", "backdrop",
+							"source", "TMDB",
+							"error", err,
+						)
 					} else {
 						backdropDownloaded = true
 						backdropSource = "TMDB"
 					}
+				} else {
+					slog.Debug("image not available",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "backdrop",
+						"reason", "no_backdrop_path_in_tmdb",
+					)
 				}
 			}
 
 			if backdropDownloaded {
-				slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", backdropSource)
+				slog.Debug("image download success",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", backdropSource,
+					"path", backdropPath,
+				)
 			}
 		}
 
@@ -768,15 +900,16 @@ func detectPatternsMatched(filename string) string {
 	return strings.Join(patterns, ", ")
 }
 
-// createFileHandler creates a handler function for processing new files in watch mode (US-022)
+// createFileHandler creates a handler function for processing new files in watch mode (US-022, US-027)
 func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWriter *writer.MDXWriter) scanner.FileHandler {
 	return func(file scanner.FileInfo) error {
 		slog.Info("watch mode: processing file", "filename", file.FileName)
 
-		// Fetch metadata from NFO or TMDB (same logic as main scan)
+		// Fetch metadata from NFO or TMDB (same logic as main scan, US-027: verbose logging)
 		var movie *writer.Movie
 		var err error
 		var metadataSource string
+		var tmdbLookupMethod string
 
 		if cfg.Options.UseNFO {
 			nfoParser := nfo.NewParser()
@@ -784,29 +917,58 @@ func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWrite
 
 			if err != nil {
 				if cfg.Options.NFOFallbackTMDB {
-					slog.Debug("nfo error, falling back to tmdb", "error", err)
+					slog.Debug("metadata lookup",
+						"file", file.FileName,
+						"nfo_status", "not_found_or_error",
+						"nfo_error", err.Error(),
+						"action", "fallback_to_tmdb",
+					)
 					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 					metadataSource = "TMDB"
+					tmdbLookupMethod = "search"
 				}
 			} else {
 				metadataSource = "NFO"
+				slog.Debug("metadata lookup",
+					"file", file.FileName,
+					"nfo_status", "found",
+					"nfo_title", movie.Title,
+					"nfo_tmdb_id", movie.TMDBID,
+				)
 
 				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
-					slog.Debug("nfo contains tmdb id, using direct lookup", "tmdb_id", movie.TMDBID)
+					slog.Debug("tmdb enrichment",
+						"file", file.FileName,
+						"method", "direct_id_lookup",
+						"tmdb_id", movie.TMDBID,
+					)
 					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
 					if tmdbErr != nil {
 						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
-							slog.Debug("tmdb id not found, falling back to search", "tmdb_id", movie.TMDBID)
+							slog.Debug("tmdb enrichment",
+								"file", file.FileName,
+								"method", "search_fallback",
+								"reason", "direct_id_not_found",
+								"tmdb_id", movie.TMDBID,
+							)
 							tmdbMovie, tmdbErr = tmdbClient.GetFullMovieData(file.Title, file.Year)
+							tmdbLookupMethod = "search (fallback from direct)"
 						}
+					} else {
+						tmdbLookupMethod = "direct ID"
 					}
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
 						metadataSource = "NFO+TMDB"
 					}
 				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
-					slog.Debug("nfo incomplete, enriching with tmdb search")
+					slog.Debug("tmdb enrichment",
+						"file", file.FileName,
+						"method", "search",
+						"reason", "nfo_incomplete",
+					)
 					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
+					tmdbLookupMethod = "search"
 					if tmdbErr == nil && tmdbMovie != nil {
 						movie = mergeMovieData(movie, tmdbMovie)
 						metadataSource = "NFO+TMDB"
@@ -814,12 +976,26 @@ func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWrite
 				}
 			}
 		} else {
+			slog.Debug("metadata lookup",
+				"file", file.FileName,
+				"nfo_status", "disabled",
+				"action", "tmdb_search",
+			)
 			movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
 			metadataSource = "TMDB"
+			tmdbLookupMethod = "search"
 		}
 
 		if err != nil {
 			return fmt.Errorf("failed to fetch metadata: %w", err)
+		}
+
+		// Log TMDB lookup method if used
+		if tmdbLookupMethod != "" {
+			slog.Debug("tmdb lookup completed",
+				"file", file.FileName,
+				"lookup_method", tmdbLookupMethod,
+			)
 		}
 
 		// Generate clean slug from metadata title
@@ -830,47 +1006,107 @@ func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWrite
 
 		slog.Info("metadata fetched", "movie", movie.Title, "year", movie.ReleaseYear, "source", metadataSource)
 
-		// Download cover image
+		// Download cover image (US-027: consistent verbose logging)
 		if cfg.Options.DownloadCovers {
 			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
 			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
 
 			coverDownloaded := false
+			coverSource := ""
 			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", "NFO",
+				)
 				if err := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); err == nil {
 					coverDownloaded = true
-					slog.Debug("downloaded cover image", "movie", movie.Title, "source", "NFO")
+					coverSource = "NFO"
+				} else {
+					slog.Debug("image download failed",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "cover",
+						"source", "NFO",
+						"error", err.Error(),
+					)
 				}
 			}
 			if !coverDownloaded {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", "TMDB",
+				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.PosterPath != "" {
 					if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err == nil {
-						slog.Debug("downloaded cover image", "movie", movie.Title, "source", "TMDB")
+						coverDownloaded = true
+						coverSource = "TMDB"
 					}
 				}
 			}
+			if coverDownloaded {
+				slog.Debug("image download success",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "cover",
+					"source", coverSource,
+				)
+			}
 		}
 
-		// Download backdrop image
+		// Download backdrop image (US-027: consistent verbose logging)
 		if cfg.Options.DownloadBackdrops {
 			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
 			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
 
 			backdropDownloaded := false
+			backdropSource := ""
 			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", "NFO",
+				)
 				if err := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); err == nil {
 					backdropDownloaded = true
-					slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", "NFO")
+					backdropSource = "NFO"
+				} else {
+					slog.Debug("image download failed",
+						"file", file.FileName,
+						"movie", movie.Title,
+						"image_type", "backdrop",
+						"source", "NFO",
+						"error", err.Error(),
+					)
 				}
 			}
 			if !backdropDownloaded {
+				slog.Debug("image download attempt",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", "TMDB",
+				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.BackdropPath != "" {
 					if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err == nil {
-						slog.Debug("downloaded backdrop image", "movie", movie.Title, "source", "TMDB")
+						backdropDownloaded = true
+						backdropSource = "TMDB"
 					}
 				}
+			}
+			if backdropDownloaded {
+				slog.Debug("image download success",
+					"file", file.FileName,
+					"movie", movie.Title,
+					"image_type", "backdrop",
+					"source", backdropSource,
+				)
 			}
 		}
 

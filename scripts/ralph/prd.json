@@ -429,8 +429,8 @@
         "Typecheck passes"
       ],
       "priority": 27,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Improved verbose logging in cmd/scanner/main.go with consistent structured log format. All debug logs now include 'file' field for context. Metadata lookup logs show nfo_status, nfo_error, action. TMDB enrichment logs show method (direct_id_lookup, search, search_fallback), reason, and IDs. Image download logs use consistent format with file, movie, image_type, source fields for attempt/success/failure. Watch mode handler (createFileHandler) updated with same consistent logging patterns. Retry and cache logging was already implemented via RetryLogFunc and CacheLogFunc callbacks. Go build/vet/test all pass."
     },
     {
       "id": "US-028",
