@@ -1,7 +1,7 @@
 # MovieVault - Future Roadmap
 
-**Last Updated:** January 27, 2026
-**Current Version:** 1.1.0 (with NFO support)
+**Last Updated:** February 3, 2026
+**Current Version:** 1.3.0
 
 This document outlines potential improvements, feature requests, and enhancement ideas for the MovieVault project. Items are categorized by area and prioritized based on impact, complexity, and user demand.
 
@@ -26,8 +26,8 @@ This document outlines potential improvements, feature requests, and enhancement
 
 ## NFO Enhancements
 
-### 1.1 NFO Image Download Support
-**Priority:** Medium | **Complexity:** Medium | **Impact:** Medium
+### 1.1 NFO Image Download Support ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Medium | **Impact:** Medium | **Implemented:** US-018, US-019, US-020
 
 **Description:**
 Currently, NFO image URLs are parsed but not downloaded. Images still come from TMDB. Add support for downloading images referenced in .nfo files.
@@ -55,11 +55,11 @@ if nfo.Fanart != nil && len(nfo.Fanart.Thumbs) > 0 {
 - Reduce TMDB dependency
 
 **Tasks:**
-- [ ] Add URL validation function
-- [ ] Implement image download with retry
-- [ ] Add fallback to TMDB on failure
-- [ ] Support both local and remote URLs
-- [ ] Add config option: `nfo_download_images: bool`
+- [x] Add URL validation function
+- [x] Implement image download with retry
+- [x] Add fallback to TMDB on failure
+- [x] Support both local and remote URLs
+- [x] Add config option: `nfo_download_images: bool`
 
 ---
 
@@ -717,8 +717,8 @@ images:
 
 ## Scanner Improvements
 
-### 4.1 Better Title Extraction
-**Priority:** High | **Complexity:** Medium | **Impact:** High
+### 4.1 Better Title Extraction ✅ COMPLETED
+**Priority:** High | **Complexity:** Medium | **Impact:** High | **Implemented:** US-013 through US-017
 
 **Description:**
 Improve filename parsing to handle more formats and edge cases.
@@ -763,17 +763,17 @@ var patterns = []struct {
 ```
 
 **Tasks:**
-- [ ] Research common filename patterns
-- [ ] Implement pattern library
-- [ ] Add quality tag removal
-- [ ] Add release group removal
-- [ ] Create comprehensive test suite
-- [ ] Add `--test-parser` debug mode
+- [x] Research common filename patterns
+- [x] Implement pattern library
+- [x] Add quality tag removal
+- [x] Add release group removal
+- [x] Create comprehensive test suite
+- [x] Add `--test-parser` debug mode
 
 ---
 
-### 4.2 Watch Folder / Auto-Scan
-**Priority:** Medium | **Complexity:** Medium | **Impact:** High
+### 4.2 Watch Folder / Auto-Scan ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Medium | **Impact:** High | **Implemented:** US-021, US-022, US-023
 
 **Description:**
 Automatically scan when new files are added to watched directories.
@@ -825,17 +825,17 @@ scanner:
 - Continuous scanning
 
 **Tasks:**
-- [ ] Add fsnotify dependency
-- [ ] Implement file watching
-- [ ] Add debouncing (wait for file to finish copying)
-- [ ] Handle file moves/renames
-- [ ] Add `--watch` flag
+- [x] Add fsnotify dependency
+- [x] Implement file watching
+- [x] Add debouncing (wait for file to finish copying)
+- [x] Handle file moves/renames
+- [x] Add `--watch` flag
 - [ ] Create systemd service example
 
 ---
 
-### 4.3 Duplicate Detection
-**Priority:** Medium | **Complexity:** Medium | **Impact:** Medium
+### 4.3 Duplicate Detection ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Medium | **Impact:** Medium | **Implemented:** US-024, US-025
 
 **Description:**
 Detect and report duplicate movies in library.
@@ -896,11 +896,11 @@ Total: 2 duplicates found
 ```
 
 **Tasks:**
-- [ ] Implement duplicate detection
+- [x] Implement duplicate detection
 - [ ] Add file hashing
-- [ ] Create duplicate report
+- [x] Create duplicate report
 - [ ] Add interactive cleanup
-- [ ] Add quality comparison logic
+- [x] Add quality comparison logic
 
 ---
 
@@ -953,8 +953,8 @@ profiles:
 
 ---
 
-### 4.5 Smart Retry Logic
-**Priority:** Medium | **Complexity:** Low | **Impact:** Medium
+### 4.5 Smart Retry Logic ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Low | **Impact:** Medium | **Implemented:** US-028
 
 **Description:**
 Automatically retry failed operations with exponential backoff.
@@ -1002,11 +1002,11 @@ retry:
 ```
 
 **Tasks:**
-- [ ] Implement retry logic
-- [ ] Add exponential backoff
-- [ ] Classify retryable errors
+- [x] Implement retry logic
+- [x] Add exponential backoff
+- [x] Classify retryable errors
 - [ ] Add retry metrics
-- [ ] Log retry attempts
+- [x] Log retry attempts
 
 ---
 
@@ -1310,8 +1310,8 @@ CREATE TABLE movie_cast (
 
 ---
 
-### 6.2 Metadata Cache Database
-**Priority:** Medium | **Complexity:** Medium | **Impact:** High
+### 6.2 Metadata Cache Database ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Medium | **Impact:** High | **Implemented:** US-026
 
 **Description:**
 Dedicated cache database for TMDB/IMDb responses.
@@ -1344,11 +1344,11 @@ CREATE INDEX idx_tmdb_title_year ON tmdb_cache(title, year);
 - Manual cache management
 
 **Tasks:**
-- [ ] Create cache database schema
-- [ ] Implement cache storage
-- [ ] Add TTL management
+- [x] Create cache database schema
+- [x] Implement cache storage
+- [x] Add TTL management
 - [ ] Add cache pruning
-- [ ] Add cache statistics
+- [x] Add cache statistics
 
 ---
 
@@ -2524,8 +2524,8 @@ Run './scanner' to start scanning!
 
 ---
 
-### 11.2 Better Logging
-**Priority:** Medium | **Complexity:** Low | **Impact:** Medium
+### 11.2 Better Logging ⚡ IN PROGRESS
+**Priority:** Medium | **Complexity:** Low | **Impact:** Medium | **Partially Implemented:** US-027 (structured verbose logging)
 
 **Description:**
 Structured logging with levels, rotation, and formatting.
@@ -2947,6 +2947,19 @@ offline:
 
 ## Priority Matrix
 
+### Completed
+
+| Feature | User Story | Version |
+|---------|-----------|---------|
+| Better Title Extraction | US-013 – US-017 | 1.3.0 |
+| NFO Image Download | US-018 – US-020 | 1.3.0 |
+| Watch Folder / Auto-Scan | US-021 – US-023 | 1.3.0 |
+| Duplicate Detection | US-024 – US-025 | 1.3.0 |
+| Metadata Cache + Statistics | US-026 | 1.3.0 |
+| Structured Verbose Logging | US-027 | 1.3.0 |
+| Configuration Validation | US-028 | 1.3.0 |
+| Smart Retry Logic | — | 1.3.0 |
+
 ### High Priority (Implement Soon)
 
 | Feature | Complexity | Impact | Justification |
@@ -2954,7 +2967,6 @@ offline:
 | Direct TMDB Lookup via NFO ID | Low | High | Easy win, much more accurate |
 | Concurrent Scanning | Medium | High | 5x performance improvement |
 | Incremental Scanning | Medium | High | Essential for large libraries |
-| Better Title Extraction | Medium | High | Fixes common issues |
 | SQLite Library Database | Medium | High | Enables advanced features |
 | Built-in Web UI | High | High | Major usability improvement |
 | Jellyfin Integration | Medium | High | Target audience wants this |
@@ -2963,11 +2975,8 @@ offline:
 
 | Feature | Complexity | Impact |
 |---------|-----------|--------|
-| NFO Image Download | Medium | Medium |
 | IMDb Integration | Medium | High |
-| Local Metadata Cache | Low | High |
 | Smart Caching Strategy | Medium | Medium |
-| Watch Folder | Medium | High |
 | Custom MDX Templates | Low | Medium |
 | API Server | Medium | Medium |
 
@@ -2994,6 +3003,8 @@ Pull requests welcome!
 ---
 
 ## Changelog
+
+**2026-02-03:** Marked 8 features complete (US-013–US-028): title extraction, NFO image downloads, watch mode, duplicate detection with quality comparison, SQLite cache with statistics, structured verbose logging, retry logic, and configuration validation. Updated priority matrix.
 
 **2026-01-27:** Initial roadmap created after NFO support implementation
 

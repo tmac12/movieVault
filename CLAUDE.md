@@ -12,7 +12,7 @@ MovieVault is a movie library scanner that discovers video files, fetches metada
 - **Metadata:** TMDB API + Jellyfin NFO support
 - **Deployment:** Docker or native
 
-**Current Version:** 1.1.0 (with NFO support)
+**Current Version:** 1.3.0
 
 ## Build & Run Commands
 
@@ -31,6 +31,15 @@ go build -o scanner cmd/scanner/main.go
 ./scanner --no-build            # Skip Astro build step
 ./scanner --dry-run             # Preview without changes
 ./scanner --config /path/to/config.yaml  # Custom config
+
+# Watch mode
+./scanner --watch               # Continuously monitor for new files
+
+# Diagnostics
+./scanner --test-parser "Movie.Name.2020.1080p.mkv"  # Test title extraction
+./scanner --find-duplicates     # Report duplicate movies
+./scanner --find-duplicates --detailed  # With quality scores
+./scanner --cache-stats         # Show cache hit/miss stats
 ```
 
 ### Astro Website
@@ -82,11 +91,16 @@ Video Files → Scanner → Metadata Fetcher → MDX Writer → Astro Site
 internal/
 ├── config/          # YAML config loading, validation
 ├── scanner/         # File discovery, title extraction, slug generation
+│   ├── watcher.go      # Watch mode (fsnotify-based)
+│   └── duplicates.go   # Duplicate detection + quality scoring
 ├── metadata/        # Metadata sources
 │   ├── tmdb.go      # TMDB API client
-│   ├── nfo/         # Jellyfin NFO parser (v1.1.0)
+│   ├── nfo/         # Jellyfin NFO parser
 │   │   ├── types.go    # XML structs
-│   │   └── parser.go   # Parse, convert, merge logic
+│   │   └── parser.go   # Parse, convert, merge, image URL extraction
+│   ├── cache/       # SQLite TMDB response cache
+│   │   ├── cache.go    # Cache interface + stats
+│   │   └── sqlite.go   # SQLite implementation
 │   └── types.go     # Shared TMDB types
 └── writer/          # MDX generation
     ├── models.go    # Movie struct (canonical)
@@ -141,8 +155,8 @@ if cfg.Options.UseNFO {
 3. Remove release groups: `-GROUP`, `[GROUP]`
 4. Clean up: Convert `.` to spaces, trim
 
-**Known Issue:** "The.Matrix.1999.1080p.BluRay.mkv" → "The Matrix p" (includes "p" from "1080p")
-See ROADMAP.md section 4.1 for planned fix.
+**Note:** Title extraction handles quality markers, audio codecs, edition markers, release groups,
+and year-starting titles. Use `--test-parser` for interactive testing.
 
 #### 4. Slug Generation
 
@@ -201,6 +215,23 @@ Plot summary...
 - Rating, runtime, etc.
 ```
 
+#### 7. Watch Mode
+
+`internal/scanner/watcher.go` uses `fsnotify` to monitor configured directories. A debounce
+timer (default 30s) waits after each file event before processing, preventing partial-write
+issues during large file copies. Rename and delete events cancel pending timers.
+
+#### 8. Duplicate Detection
+
+`internal/scanner/duplicates.go` groups movies by TMDB ID (or title+year as fallback) and
+computes a quality score per copy: `resolution_rank × 10 + source_rank`. The highest-scoring
+copy in each group is marked as recommended. Activated via `--find-duplicates`.
+
+#### 9. SQLite Cache
+
+`internal/metadata/cache/` caches TMDB API responses in a local SQLite database with
+configurable TTL. Tracks hits, misses, and entry count. Stats are viewable with `--cache-stats`.
+
 ## Configuration System
 
 **Version:** v1.2 - Dual-config pattern (as of January 29, 2026)
@@ -225,6 +256,9 @@ tmdb:
 scanner:
   directories: ["/Users/you/Movies"]  # Local paths
   extensions: [".mkv", ".mp4", ...]
+  watch_mode: false           # Enable continuous directory monitoring
+  watch_debounce: 30          # Seconds to wait after file change
+  watch_recursive: true       # Watch subdirectories
 
 output:
   mdx_dir: "./website/src/content/movies"
@@ -236,8 +270,18 @@ options:
   rate_limit_delay: 250
   download_covers: true
   download_backdrops: true
-  use_nfo: true            # Enable NFO parsing (v1.1.0)
+  use_nfo: true            # Enable NFO parsing
   nfo_fallback_tmdb: true  # Merge TMDB if NFO incomplete
+  nfo_download_images: false  # Try NFO image URLs before TMDB
+
+retry:
+  max_attempts: 3           # Retries for transient API errors
+  initial_backoff_ms: 1000  # Doubles each retry
+
+cache:
+  enabled: true             # SQLite cache for TMDB responses
+  path: "./data/cache.db"
+  ttl_days: 30              # Cache entry expiry
 ```
 
 **Security:** Gitignored (`/config/config.yaml` in .gitignore line 2)
@@ -252,6 +296,9 @@ tmdb:
 scanner:
   directories: ["/movies"]  # Container paths
   extensions: [".mkv", ".mp4", ...]
+  watch_mode: false
+  watch_debounce: 30
+  watch_recursive: true
 
 output:
   mdx_dir: "/data/movies"     # Mapped to ./data/movies
@@ -264,6 +311,16 @@ options:
   download_backdrops: true
   use_nfo: true
   nfo_fallback_tmdb: true
+  nfo_download_images: false
+
+retry:
+  max_attempts: 3
+  initial_backoff_ms: 1000
+
+cache:
+  enabled: true
+  path: "/data/cache.db"
+  ttl_days: 30
 ```
 
 **Security:** Safe to commit (no secrets, uses env vars)
@@ -317,7 +374,7 @@ Supports Jellyfin NFO format:
 - Multiple genres, directors
 - Actors (extracts top 5)
 - TMDB ID, IMDb ID
-- Images (parsed but not yet downloaded - uses TMDB images)
+- Images (poster/backdrop URLs extracted; downloaded when `nfo_download_images` enabled)
 
 **Conversion Logic:** `parser.go:ConvertToMovie()`
 
@@ -405,10 +462,10 @@ Default 250ms delay between calls. Large libraries (500+ movies):
 
 ### 3. NFO Image URLs
 
-NFO `<thumb>` and `<fanart>` URLs are parsed but not downloaded. Still uses TMDB images.
+NFO `<thumb>` and `<fanart>` URLs are extracted and downloaded when `nfo_download_images: true`.
+Falls back to TMDB images if NFO URLs fail or are absent.
 
-**Reason:** NFO URLs often local paths or private servers.
-**Planned:** See ROADMAP.md section 1.1
+**Note:** Only HTTP/HTTPS URLs are attempted. Local filesystem paths in NFO files are skipped.
 
 ### 4. Auto-Build Timing
 
@@ -456,6 +513,32 @@ Scanner needs read access to movie directories. Docker: ensure volume mounts are
 - Astro build: ~45 seconds
 
 ## Recent Changes & Migration Notes
+
+### v1.3.0 - Watch Mode, Duplicate Detection & Cache (2026-02-03)
+
+**New Features:**
+- **Title Extraction (US-013–017):** Audio markers (DTS-HD, Atmos, FLAC), release groups (`-SPARKS`, `[YTS]`), edition markers (Director's Cut, IMAX), year-starting titles (e.g. "2001: A Space Odyssey"), and `--test-parser` CLI flag
+- **NFO Image Downloads (US-018–020):** Extract and download poster/backdrop from NFO `<thumb>`/`<fanart>`. Falls back to TMDB. Controlled by `nfo_download_images`
+- **Watch Mode (US-021–023):** Continuous directory monitoring via fsnotify with debounce, rename/delete event handling, graceful shutdown
+- **Duplicate Detection (US-024–025):** `--find-duplicates` with quality-based scoring (resolution × 10 + source rank) and recommended-copy marking. `--detailed` shows full breakdown
+- **Cache Statistics (US-026):** SQLite cache tracks hits, misses, hit rate. `--cache-stats` flag for summary
+- **Structured Logging (US-027):** Verbose mode uses consistent structured fields (file, nfo_status, method, source, etc.)
+- **Config Validation (US-028):** Validates retry, cache, NFO, and watch settings on startup with clear error messages
+
+**New CLI Flags:** `--watch`, `--test-parser`, `--find-duplicates`, `--find-duplicates --detailed`, `--cache-stats`
+
+**New Config Options:** `scanner.watch_mode`, `scanner.watch_debounce`, `scanner.watch_recursive`, `options.nfo_download_images`, `retry.*`, `cache.*`
+
+**New Files:**
+- `internal/scanner/watcher.go` — watch mode implementation
+- `internal/scanner/duplicates.go` — duplicate detection + quality scoring
+- `internal/scanner/patterns_test.go` — unit tests for title extraction
+- `internal/metadata/cache/cache.go` — cache interface + stats
+- `internal/metadata/cache/sqlite.go` — SQLite cache implementation
+
+**Migration:** No breaking changes. All new features are opt-in or additive.
+
+---
 
 ### v1.2.0 - Dual-Config Pattern & Security Fixes (2026-01-29)
 
@@ -536,8 +619,8 @@ See ROADMAP.md for 60+ planned features across 12 categories.
 1. Direct TMDB lookup via NFO ID (High/Low)
 2. Concurrent scanning (High/Medium) - 5x speed improvement
 3. Incremental scanning (High/Medium) - only changed files
-4. Better title extraction (High/Medium) - fix "The Matrix p" bug
-5. SQLite library database (High/Medium) - enables advanced features
+4. SQLite library database (High/Medium) - enables advanced features
+5. Built-in web UI (High/High) - major usability improvement
 
 ## External Documentation
 
