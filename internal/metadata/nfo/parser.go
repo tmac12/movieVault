@@ -19,26 +19,26 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
-// FindNFOFile locates the .nfo file for a given video file
+// FindNFOFile locates the .nfo file for a given video file.
 // Priority order:
-// 1. {filename}.nfo (e.g., "The Matrix (1999).nfo")
-// 2. movie.nfo (Jellyfin standard)
+// 1. movie.nfo (Jellyfin/Kodi shared metadata — preferred for multi-part movies)
+// 2. {filename}.nfo (per-file fallback, e.g. "The Matrix (1999).nfo")
 func (p *Parser) FindNFOFile(videoPath string) (string, error) {
 	dir := filepath.Dir(videoPath)
 	baseNameWithExt := filepath.Base(videoPath)
 	ext := filepath.Ext(baseNameWithExt)
 	baseName := strings.TrimSuffix(baseNameWithExt, ext)
 
-	// Try filename.nfo first
-	fileNameNFO := filepath.Join(dir, baseName+".nfo")
-	if _, err := os.Stat(fileNameNFO); err == nil {
-		return fileNameNFO, nil
-	}
-
-	// Try movie.nfo
+	// Try movie.nfo first (shared metadata, reliable for multi-part titles)
 	movieNFO := filepath.Join(dir, "movie.nfo")
 	if _, err := os.Stat(movieNFO); err == nil {
 		return movieNFO, nil
+	}
+
+	// Fall back to filename.nfo
+	fileNameNFO := filepath.Join(dir, baseName+".nfo")
+	if _, err := os.Stat(fileNameNFO); err == nil {
+		return fileNameNFO, nil
 	}
 
 	return "", fmt.Errorf("no .nfo file found for %s", videoPath)
