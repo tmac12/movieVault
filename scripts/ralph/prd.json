@@ -446,8 +446,8 @@
         "Typecheck passes"
       ],
       "priority": 28,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added validate() method to Config struct in internal/config/config.go. Validates retry.max_attempts and retry.initial_backoff_ms are positive (returns error if not). Validates cache.ttl_days is positive when cache enabled. Validates cache path parent directory exists and is writable by creating test file. Warns via slog.Warn if nfo_download_images is true but use_nfo is false. Warns if watch_mode is true but no directories configured. All validation runs after defaults are set in Load(). Go build/vet/test all pass. Website has no typecheck/test scripts."
     }
   ]
 }

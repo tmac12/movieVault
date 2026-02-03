@@ -1120,3 +1120,45 @@ time=... level=INFO msg="cache statistics" hits=45 misses=5 hit_rate="90.0%" ent
 - All debug logs include `file` field to correlate messages with specific files being processed
 - Cache/retry logging callbacks remain in place from previous implementations
 
+## 2026-02-03: US-028 - Add configuration validation
+
+### What was done:
+- Added `validate()` method to `Config` struct in `internal/config/config.go`
+- Added `log/slog` import for warning messages
+- Validation checks implemented:
+  - **retry.max_attempts**: Returns error if <= 0
+  - **retry.initial_backoff_ms**: Returns error if <= 0
+  - **cache.ttl_days**: Returns error if <= 0 when cache is enabled
+  - **cache path parent directory**: Creates parent directory if needed, tests writability by creating/deleting temp file
+  - **nfo_download_images + use_nfo**: Warns via `slog.Warn` if nfo_download_images is true but use_nfo is false
+  - **watch_mode + directories**: Warns via `slog.Warn` if watch_mode is true but no directories configured
+- All validation runs after defaults are set in `Load()` function
+- Exit with clear error message on validation failure (Load returns error)
+
+### Files modified:
+- `internal/config/config.go` - Added validate() method, added slog import
+
+### Validation logic:
+```go
+func (cfg *Config) validate() error {
+    // Check retry.max_attempts > 0
+    // Check retry.initial_backoff_ms > 0
+    // Check cache path parent writable (when cache enabled)
+    // Warn: nfo_download_images && !use_nfo
+    // Warn: watch_mode && len(directories) == 0
+    // Check cache.ttl_days > 0 (when cache enabled)
+}
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-028 is the LAST user story in the PRD (v1.2 Scanner Overhaul)
+- All 28 user stories are now complete!
+- PRD is now 100% complete
+- Consider future enhancements: concurrent scanning, SQLite library database, web UI
+

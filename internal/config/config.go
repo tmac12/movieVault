@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -154,5 +155,59 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to create covers directory: %w", err)
 	}
 
+	// US-028: Validate configuration options
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
 	return &cfg, nil
+}
+
+// validate performs validation on configuration options (US-028)
+func (cfg *Config) validate() error {
+	// Validate retry.max_attempts is positive
+	if cfg.Retry.MaxAttempts <= 0 {
+		return fmt.Errorf("retry.max_attempts must be positive (got %d)", cfg.Retry.MaxAttempts)
+	}
+
+	// Validate retry.initial_backoff_ms is positive
+	if cfg.Retry.InitialBackoffMs <= 0 {
+		return fmt.Errorf("retry.initial_backoff_ms must be positive (got %d)", cfg.Retry.InitialBackoffMs)
+	}
+
+	// Validate cache path parent directory exists and is writable when cache is enabled
+	if cfg.Cache.Enabled {
+		cacheParentDir := filepath.Dir(cfg.Cache.Path)
+		if cacheParentDir != "" && cacheParentDir != "." {
+			// Try to create parent directory if it doesn't exist
+			if err := os.MkdirAll(cacheParentDir, 0755); err != nil {
+				return fmt.Errorf("cache path parent directory is not writable: %s (%w)", cacheParentDir, err)
+			}
+			// Check if the directory is writable by attempting to create a temp file
+			testFile := filepath.Join(cacheParentDir, ".write-test")
+			f, err := os.Create(testFile)
+			if err != nil {
+				return fmt.Errorf("cache path parent directory is not writable: %s (%w)", cacheParentDir, err)
+			}
+			f.Close()
+			os.Remove(testFile)
+		}
+	}
+
+	// Warn if nfo_download_images: true but use_nfo: false
+	if cfg.Options.NFODownloadImages && !cfg.Options.UseNFO {
+		slog.Warn("nfo_download_images is enabled but use_nfo is disabled; NFO image URLs will not be available")
+	}
+
+	// Warn if watch_mode: true but no directories configured
+	if cfg.Scanner.WatchMode && len(cfg.Scanner.Directories) == 0 {
+		slog.Warn("watch_mode is enabled but no directories are configured; nothing to watch")
+	}
+
+	// Validate cache TTL is positive when cache is enabled
+	if cfg.Cache.Enabled && cfg.Cache.TTLDays <= 0 {
+		return fmt.Errorf("cache.ttl_days must be positive when cache is enabled (got %d)", cfg.Cache.TTLDays)
+	}
+
+	return nil
 }
