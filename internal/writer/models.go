@@ -24,4 +24,7 @@ type Movie struct {
 	IMDbID        string    `yaml:"imdbId,omitempty"`
 	ScannedAt     time.Time `yaml:"scannedAt"`
 	FileSize      int64     `yaml:"fileSize"`
+	// NFO image URLs (US-018) - used for NFO-based image downloads
+	PosterURL   string `yaml:"-"` // Not persisted to MDX, used during processing
+	BackdropURL string `yaml:"-"` // Not persisted to MDX, used during processing
 }
