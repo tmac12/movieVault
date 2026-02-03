@@ -412,8 +412,8 @@
         "Typecheck passes"
       ],
       "priority": 26,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Added CacheStats struct with Hits, Misses, EntryCount fields and HitRate() method. Added Stats() and ResetStats() methods to Cache interface and SQLiteCache implementation. SQLiteCache tracks hits/misses using atomic counters. Added --cache-stats flag to scanner that displays cache path, TTL, and entry count. At end of scan, cache statistics (hits, misses, hit rate percentage, entry count) are logged via slog.Info."
     },
     {
       "id": "US-027",

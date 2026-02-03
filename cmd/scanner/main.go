@@ -30,6 +30,7 @@ var (
 	dryRun         = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
 	verbose        = flag.Bool("verbose", false, "Show detailed logging")
 	clearCache     = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
+	cacheStats     = flag.Bool("cache-stats", false, "Show cache statistics and exit")
 	testParser     = flag.Bool("test-parser", false, "Test title extraction without running full scan")
 	watchMode      = flag.Bool("watch", false, "Watch directories for new files and process automatically")
 	findDuplicates = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
@@ -116,6 +117,37 @@ func main() {
 		}
 
 		fmt.Printf("Cache cleared successfully. %d entries removed.\n", count)
+		os.Exit(0)
+	}
+
+	// Handle --cache-stats flag (US-026)
+	if *cacheStats {
+		if !cfg.Cache.Enabled {
+			fmt.Println("Cache is disabled in configuration.")
+			os.Exit(0)
+		}
+
+		tmdbCache, err := cache.NewSQLiteCache(cfg.Cache.Path)
+		if err != nil {
+			slog.Error("failed to open cache", "path", cfg.Cache.Path, "error", err)
+			os.Exit(1)
+		}
+		defer tmdbCache.Close()
+
+		stats, err := tmdbCache.Stats()
+		if err != nil {
+			slog.Error("failed to get cache stats", "error", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("Cache Statistics")
+		fmt.Println("================")
+		fmt.Printf("Cache path:    %s\n", cfg.Cache.Path)
+		fmt.Printf("Cache TTL:     %d days\n", cfg.Cache.TTLDays)
+		fmt.Printf("Entry count:   %d\n", stats.EntryCount)
+		fmt.Println()
+		fmt.Println("Note: Hit/miss statistics are tracked per session.")
+		fmt.Println("Run a scan to see cache effectiveness metrics.")
 		os.Exit(0)
 	}
 
@@ -494,6 +526,19 @@ func main() {
 			"mixed_count", mixedCount,
 			"mixed_percent", fmt.Sprintf("%.0f%%", float64(mixedCount)/float64(successCount)*100),
 		)
+	}
+
+	// Display cache statistics at end of scan (US-026)
+	if tmdbCache != nil {
+		stats, err := tmdbCache.Stats()
+		if err == nil {
+			slog.Info("cache statistics",
+				"hits", stats.Hits,
+				"misses", stats.Misses,
+				"hit_rate", fmt.Sprintf("%.1f%%", stats.HitRate()),
+				"entry_count", stats.EntryCount,
+			)
+		}
 	}
 
 	// Build Astro site if enabled and not disabled via flag

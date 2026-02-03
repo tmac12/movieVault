@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -12,7 +13,9 @@ import (
 
 // SQLiteCache implements the Cache interface using SQLite for persistence.
 type SQLiteCache struct {
-	db *sql.DB
+	db     *sql.DB
+	hits   int64 // atomic counter for cache hits
+	misses int64 // atomic counter for cache misses
 }
 
 // NewSQLiteCache creates a new SQLite-backed cache.
@@ -62,6 +65,7 @@ func (c *SQLiteCache) Get(key string) ([]byte, bool) {
 
 	if err != nil {
 		// Not found or other error
+		atomic.AddInt64(&c.misses, 1)
 		return nil, false
 	}
 
@@ -69,9 +73,11 @@ func (c *SQLiteCache) Get(key string) ([]byte, bool) {
 	if time.Now().After(expiresAt) {
 		// Entry is expired, delete it
 		c.db.Exec("DELETE FROM cache WHERE cache_key = ?", key)
+		atomic.AddInt64(&c.misses, 1)
 		return nil, false
 	}
 
+	atomic.AddInt64(&c.hits, 1)
 	return data, true
 }
 
@@ -110,6 +116,25 @@ func (c *SQLiteCache) Count() (int, error) {
 		return 0, fmt.Errorf("failed to count cache entries: %w", err)
 	}
 	return count, nil
+}
+
+// Stats returns cache statistics including hits, misses, and entry count.
+func (c *SQLiteCache) Stats() (CacheStats, error) {
+	count, err := c.Count()
+	if err != nil {
+		return CacheStats{}, err
+	}
+	return CacheStats{
+		Hits:       atomic.LoadInt64(&c.hits),
+		Misses:     atomic.LoadInt64(&c.misses),
+		EntryCount: count,
+	}, nil
+}
+
+// ResetStats resets the hit and miss counters to zero.
+func (c *SQLiteCache) ResetStats() {
+	atomic.StoreInt64(&c.hits, 0)
+	atomic.StoreInt64(&c.misses, 0)
 }
 
 // Close closes the database connection.

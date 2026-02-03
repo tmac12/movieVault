@@ -1003,3 +1003,68 @@ Copies: 2
 - The quality extraction could be enhanced with more patterns (e.g., HDR, Atmos)
 - Consider adding file size comparison as a tiebreaker when quality scores are equal
 
+## 2026-02-03: US-026 - Add cache statistics tracking
+
+### What was done:
+- Added `CacheStats` struct to `internal/metadata/cache/cache.go`:
+  - `Hits int64` - number of cache hits
+  - `Misses int64` - number of cache misses
+  - `EntryCount int` - current number of entries in cache
+  - `HitRate() float64` - method that returns hit rate as percentage (0-100)
+- Added `Stats()` and `ResetStats()` methods to `Cache` interface
+- Implemented statistics tracking in `SQLiteCache`:
+  - Added `hits` and `misses` atomic int64 counters to struct
+  - `Get()` method increments `hits` on cache hit, `misses` on cache miss (including expired entries)
+  - `Stats()` returns `CacheStats` with current counters and entry count
+  - `ResetStats()` resets hit/miss counters to zero
+- Added `--cache-stats` flag to `cmd/scanner/main.go`:
+  - Shows cache path, TTL (days), and entry count
+  - Note that hit/miss stats are per-session (reset on each run)
+  - Exits after displaying stats
+- Added cache statistics display at end of scan:
+  - Logs hits, misses, hit rate percentage, and entry count via `slog.Info`
+  - Only displays if cache was enabled and initialized
+
+### Files modified:
+- `internal/metadata/cache/cache.go` - Added CacheStats struct, Stats() and ResetStats() to interface
+- `internal/metadata/cache/sqlite.go` - Added atomic counters, implemented Stats/ResetStats, updated Get()
+- `cmd/scanner/main.go` - Added --cache-stats flag and cache stats display at end of scan
+
+### Usage:
+```bash
+# Show cache statistics without scanning
+./scanner --cache-stats
+
+# Run scan and see cache stats at the end
+./scanner --verbose
+```
+
+### Output format:
+```
+# --cache-stats flag output:
+Cache Statistics
+================
+Cache path:    ./data/cache.db
+Cache TTL:     30 days
+Entry count:   150
+
+Note: Hit/miss statistics are tracked per session.
+Run a scan to see cache effectiveness metrics.
+
+# End of scan cache stats (via slog.Info):
+time=... level=INFO msg="cache statistics" hits=45 misses=5 hit_rate="90.0%" entry_count=150
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-027 (Improve verbose logging) is the next logical step
+- US-027 will consolidate and improve verbose logging across the codebase
+- Cache statistics use atomic counters for thread safety (useful for watch mode)
+- The hit/miss counters reset each session since SQLiteCache is created fresh each run
+- Consider persisting statistics to database in future if cross-session metrics needed
+
