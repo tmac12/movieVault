@@ -836,5 +836,5 @@ Create Release:        https://github.com/YOUR_USERNAME/movievault/releases/new
 
 ---
 
-**Last Updated:** January 30, 2026
-**MovieVault Version:** 1.2.0
+**Last Updated:** February 4, 2026
+**MovieVault Version:** 1.3.0
