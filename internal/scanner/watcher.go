@@ -306,6 +306,7 @@ func (w *Watcher) processFile(path string) {
 		Year:       year,
 		Size:       info.Size(),
 		Slug:       slug,
+		DiscNumber: ExtractDiscNumber(filename),
 		ShouldScan: !w.scanner.MDXExists(slug),
 	}
 
