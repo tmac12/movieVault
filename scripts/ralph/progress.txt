@@ -1,0 +1,1164 @@
+# Ralph Progress Log
+# Project: MovieVault v1.2 Scanner Overhaul
+# Branch: ralph/v1.2-scanner-overhaul
+# Started: 2026-01-30
+# ---
+
+## 2026-02-02: US-001 - Add GetMovieByID method to TMDB client
+
+### What was done:
+- Added `GetMovieByID(tmdbID int) (*writer.Movie, error)` method to `internal/metadata/tmdb.go`
+- Method directly calls TMDB `/movie/{id}` endpoint (via existing `GetMovieDetails`) bypassing search
+- Fetches credits via existing `GetMovieCredits` call
+- Returns fully populated `*writer.Movie` struct matching `GetFullMovieData` output format
+- Added `ErrMovieNotFound` sentinel error for proper 404 handling
+- Fixed pre-existing lint issue in `cmd/scanner/main.go` (redundant newline in fmt.Println)
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added GetMovieByID method and ErrMovieNotFound error
+- `cmd/scanner/main.go` - Fixed lint issue (unrelated to US-001 but blocked tests)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-002 is the logical next step - it will integrate GetMovieByID into the scanner's NFO processing flow
+- The method reuses existing GetMovieDetails and GetMovieCredits methods to maintain consistency
+- ErrMovieNotFound can be checked with `errors.Is(err, metadata.ErrMovieNotFound)` for fallback logic
+
+## 2026-02-02: US-002 - Use TMDB ID from NFO for direct lookup
+
+### What was done:
+- Modified `cmd/scanner/main.go` to use direct TMDB ID lookup when NFO contains a valid TMDBID
+- Added `errors` import for proper sentinel error checking
+- When NFO contains TMDBID > 0, calls `GetMovieByID` instead of `GetFullMovieData`
+- If `GetMovieByID` returns 404 error (checked via `errors.Is(err, metadata.ErrMovieNotFound)`), falls back to title/year search
+- If TMDBID is 0 or missing, uses existing title/year search behavior
+- Added verbose logging for TMDB lookup method ("direct ID", "search", "search (fallback from direct)")
+
+### Files modified:
+- `cmd/scanner/main.go` - Added TMDB ID direct lookup integration with NFO processing
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: npm typecheck/test not available in website - environmental esbuild ARM64 compatibility issue unrelated to Go code changes
+
+### Notes for next developer:
+- US-003 (Add retry package with exponential backoff) is the next logical step
+- The direct lookup improves metadata accuracy by avoiding title search ambiguity when TMDB ID is known
+- Verbose mode now shows which lookup method was used for debugging
+- The mergeMovieData function is still used to combine NFO data with TMDB data (NFO takes priority)
+
+## 2026-02-02: US-003 - Add retry package with exponential backoff
+
+### What was done:
+- Created `internal/retry/retry.go` package with reusable retry utility
+- Implemented `Retry(fn func() error, maxAttempts int, initialBackoff time.Duration) error`
+  - Executes function with exponential backoff until success or maxAttempts reached
+  - Backoff doubles after each failed attempt
+  - Rate-limited errors (429) use 2x longer backoff
+  - Non-retryable errors (401, 404) return immediately without retry
+- Implemented `IsRetryable(err error) bool` helper that returns true for:
+  - `net.Error` timeouts (via `errors.As`)
+  - `url.Error` timeouts (via `errors.As`)
+  - HTTP 5xx status codes (500, 501, 502, 503, 504)
+  - Common transient error messages (connection reset, connection refused, no such host, i/o timeout, temporary failure)
+- Implemented `IsRateLimited(err error) bool` helper that returns true for HTTP 429 errors
+
+### Files created:
+- `internal/retry/retry.go` - New retry package with exponential backoff
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: npm build has esbuild ARM64 compatibility issue unrelated to Go code changes
+
+### Notes for next developer:
+- US-004 (Add retry config options) is the next logical step - it will add config struct fields
+- US-005 will then integrate this retry logic into the TMDB client
+- The retry package uses error string matching for HTTP status codes since TMDB client wraps errors with fmt.Errorf
+- Consider adding structured error types in future for better error classification
+
+## 2026-02-02: US-004 - Add retry config options
+
+### What was done:
+- Added `RetryConfig` struct to `internal/config/config.go` with two fields:
+  - `MaxAttempts int` (yaml: `max_attempts`)
+  - `InitialBackoffMs int` (yaml: `initial_backoff_ms`)
+- Added `Retry` field to main `Config` struct
+- Added default values in `Load()` function:
+  - `MaxAttempts` defaults to 3
+  - `InitialBackoffMs` defaults to 1000
+- Updated `config/config.example.yaml` with retry section and descriptive comments
+
+### Files modified:
+- `internal/config/config.go` - Added RetryConfig struct and defaults
+- `config/config.example.yaml` - Added retry section with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-005 (Integrate retry logic into TMDB client) is the next logical step
+- The config values can be accessed via `cfg.Retry.MaxAttempts` and `cfg.Retry.InitialBackoffMs`
+- Convert `InitialBackoffMs` to `time.Duration` when passing to retry.Retry(): `time.Duration(cfg.Retry.InitialBackoffMs) * time.Millisecond`
+- The TMDB client will need to accept config or retry parameters to use these values
+
+## 2026-02-02: US-005 - Integrate retry logic into TMDB client
+
+### What was done:
+- Added `doRequestWithRetry(requestURL string) (*http.Response, error)` helper method to TMDB client
+  - Wraps HTTP GET requests with `retry.Retry()` from the retry package
+  - Handles both network errors and HTTP status codes (5xx, 429)
+  - Logs retry attempts via callback when provided
+  - Rate-limited (429) errors use double backoff
+- Added `RetryLogFunc` type for verbose logging callback
+- Added `ClientConfig` struct with full configuration options:
+  - `APIKey`, `Language`, `RateLimitDelayMs`
+  - `MaxAttempts`, `InitialBackoffMs`
+  - `RetryLogFunc` callback
+- Added `NewClientWithConfig(cfg ClientConfig) *Client` constructor
+- Updated existing `NewClient()` to delegate to `NewClientWithConfig()` with defaults
+- Wrapped HTTP calls in `SearchMovie`, `GetMovieDetails`, `GetMovieCredits`, and `DownloadImage` with retry logic
+- Updated `cmd/scanner/main.go` to use `NewClientWithConfig()` with retry config from loaded configuration
+- Added verbose mode logging callback that logs retry attempts with attempt number, max attempts, backoff duration, and error
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added retry integration, ClientConfig, NewClientWithConfig, doRequestWithRetry
+- `cmd/scanner/main.go` - Updated to use NewClientWithConfig with retry config and verbose logging
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-006 (Create SQLite cache package) is the next logical step
+- The retry logic is now fully integrated - all TMDB API calls will automatically retry on transient failures
+- Verbose mode (`--verbose` flag) will show retry attempts in the log output
+- The `NewClient()` function is preserved for backward compatibility with default retry settings (3 attempts, 1000ms initial backoff)
+
+## 2026-02-02: US-006 - Create SQLite cache package
+
+### What was done:
+- Created `internal/metadata/cache/cache.go` with `Cache` interface defining:
+  - `Get(key string) ([]byte, bool)` - retrieves data from cache
+  - `Set(key string, data []byte, ttl time.Duration) error` - stores data with TTL
+  - `Clear() error` - removes all entries
+  - `Close() error` - closes the cache and releases resources
+- Created `internal/metadata/cache/sqlite.go` with `SQLiteCache` implementation:
+  - Uses `github.com/mattn/go-sqlite3` driver for SQLite persistence
+  - Schema: `id` (autoincrement), `cache_key` (unique), `response_json` (blob), `cached_at`, `expires_at`
+  - Indexes on `cache_key` and `expires_at` for performance
+  - `NewSQLiteCache(dbPath string)` auto-creates database file and table on first use
+  - Get() returns cached data if found and not expired, deletes expired entries on access
+  - Set() uses INSERT OR REPLACE to handle both new entries and updates
+  - Clear() deletes all rows from cache table
+- Added `github.com/mattn/go-sqlite3 v1.14.33` dependency to go.mod
+
+### Files created:
+- `internal/metadata/cache/cache.go` - Cache interface
+- `internal/metadata/cache/sqlite.go` - SQLiteCache implementation
+
+### Files modified:
+- `go.mod` - Added go-sqlite3 dependency
+- `go.sum` - Updated with go-sqlite3 checksums
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-007 (Add cache config options) is the next logical step - adds Enabled, Path, and TTLDays config fields
+- US-008 will then integrate the cache into the TMDB client
+- The cache uses TTL-based expiration checked on Get() - expired entries are deleted when accessed
+- The SQLiteCache requires explicit Close() call to release database connection
+- Parent directory for database file is auto-created if it doesn't exist
+
+## 2026-02-02: US-007 - Add cache config options
+
+### What was done:
+- Added `CacheConfig` struct to `internal/config/config.go` with three fields:
+  - `Enabled bool` (yaml: `enabled`)
+  - `Path string` (yaml: `path`)
+  - `TTLDays int` (yaml: `ttl_days`)
+- Added `Cache` field to main `Config` struct
+- Added default values in `Load()` function:
+  - `Enabled` defaults to true (when cache section not provided)
+  - `Path` defaults to `./data/cache.db`
+  - `TTLDays` defaults to 30
+- Updated `config/config.example.yaml` with cache section and descriptive comments
+
+### Files modified:
+- `internal/config/config.go` - Added CacheConfig struct and defaults
+- `config/config.example.yaml` - Added cache section with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-008 (Integrate cache into TMDB client) is the next logical step
+- The config values can be accessed via `cfg.Cache.Enabled`, `cfg.Cache.Path`, and `cfg.Cache.TTLDays`
+- Convert TTLDays to `time.Duration` when passing to cache.Set(): `time.Duration(cfg.Cache.TTLDays) * 24 * time.Hour`
+- The default behavior enables caching - users must explicitly set `enabled: false` to disable
+- If user provides cache section with `enabled: false` and custom path, that is respected
+
+## 2026-02-02: US-008 - Integrate cache into TMDB client
+
+### What was done:
+- Added cache integration to TMDB client (`internal/metadata/tmdb.go`):
+  - Added `CacheLogFunc` type for verbose logging of cache operations
+  - Added cache-related fields to `Client` struct: `cache`, `cacheTTL`, `cacheLogFunc`, `forceRefresh`
+  - Added cache-related fields to `ClientConfig`: `Cache`, `CacheTTLDays`, `CacheLogFunc`, `ForceRefresh`
+  - Added `getFromCache(key string)` helper that checks cache (respects forceRefresh flag)
+  - Added `setToCache(key string, data []byte)` helper that stores data in cache
+  - Integrated cache into `SearchMovie()` with key format `tmdb:search:{title}:{year}`
+  - Integrated cache into `GetMovieDetails()` with key format `tmdb:movie:{tmdbID}`
+  - Integrated cache into `GetMovieCredits()` with key format `tmdb:credits:{tmdbID}`
+- Updated `cmd/scanner/main.go`:
+  - Initialize SQLiteCache when `cfg.Cache.Enabled` is true
+  - Added `cacheLogFunc` callback for verbose logging (hit/miss/store operations)
+  - Pass cache, TTL, log func, and forceRefresh flag to TMDB client via `ClientConfig`
+  - Properly close cache on exit via `defer tmdbCache.Close()`
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added cache integration with helper methods and updated API methods
+- `cmd/scanner/main.go` - Initialize cache, pass to TMDB client, add verbose logging
+
+### Cache key format:
+- Search: `tmdb:search:{title}:{year}` (e.g., `tmdb:search:The Matrix:1999`)
+- Movie details: `tmdb:movie:{tmdbID}` (e.g., `tmdb:movie:603`)
+- Credits: `tmdb:credits:{tmdbID}` (e.g., `tmdb:credits:603`)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-009 (Add --clear-cache CLI flag) is the next logical step
+- The cache is skipped when `--force-refresh` flag is used (set via `ForceRefresh` in ClientConfig)
+- Cache operations are logged in verbose mode (--verbose flag) via the CacheLogFunc callback
+- The cache TTL is converted from days to `time.Duration` in `NewClientWithConfig()`
+- If cache initialization fails, the scanner exits with error code 1
+- Image downloads (DownloadImage) are NOT cached since they go directly to files
+
+## 2026-02-02: US-009 - Add --clear-cache CLI flag
+
+### What was done:
+- Added `--clear-cache` flag to `cmd/scanner/main.go`
+- When flag is set:
+  1. Opens the SQLite cache at the configured path
+  2. Counts existing entries using new `Count()` method
+  3. Clears all entries via `cache.Clear()`
+  4. Prints confirmation message with number of entries removed
+  5. Exits with code 0 on success
+- Exits with code 1 on any error (failed to open cache, count, or clear)
+- Gracefully handles disabled cache configuration (prints message and exits 0)
+- Added `Count() (int, error)` method to `Cache` interface in `internal/metadata/cache/cache.go`
+- Implemented `Count()` in `SQLiteCache` using `SELECT COUNT(*) FROM cache`
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --clear-cache flag and handling logic
+- `internal/metadata/cache/cache.go` - Added Count() method to Cache interface
+- `internal/metadata/cache/sqlite.go` - Implemented Count() method for SQLiteCache
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-010 (Title extraction - remove resolution markers) is the next logical step
+- The --clear-cache flag is handled early in main() after config loading but before scanning
+- Count() is called before Clear() to report how many entries were removed
+- If cache is disabled in config, the flag just prints a message and exits successfully
+
+## 2026-02-02: US-010 - Title extraction - remove resolution markers
+
+### What was done:
+- Added `resolutionPattern` regex to `internal/scanner/patterns.go`
+  - Pattern: `(?i)\b(2160p|1080p|1080i|720p|720i|480p|4K)\b`
+  - Case-insensitive matching via `(?i)` flag
+  - Matches all required resolutions: 2160p, 1080p, 1080i, 720p, 720i, 480p, 4K
+- Separated resolution patterns from source quality patterns for clarity
+  - `resolutionPattern` - resolution markers only
+  - `qualityPattern` - source markers (BluRay, WEB-DL, etc.)
+- **Critical fix**: Resolution markers must be removed BEFORE year extraction
+  - The year pattern `[\[\(]?(\d{4})[\]\)]?` was matching "1080" in "1080p" as a year
+  - This left orphan "p" characters in titles (e.g., "Movie p" instead of "Movie")
+  - Moving resolution removal before year extraction prevents this issue
+
+### Files modified:
+- `internal/scanner/patterns.go` - Added resolutionPattern, reordered processing
+
+### Test cases verified:
+- `Movie.2020.1080p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.720p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.2160p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.4K.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.480p.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.1080i.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.720i.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `The.Matrix.1999.1080p.BluRay.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+
+### Notes for next developer:
+- US-011 (Title extraction - remove source markers) is the next logical step
+- The qualityPattern already contains some source markers but US-011 expands the list
+- Keep the pattern ordering: resolution → year → quality → codec → audio → etc.
+- Pattern order matters because year extraction can match 4-digit numbers in other patterns
+
+## 2026-02-02: US-011 - Title extraction - remove source markers
+
+### What was done:
+- Expanded `qualityPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `BluRay|BDRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV`
+  - New pattern: `BluRay|BRRip|WEB-DL|WEBRip|HDRip|DVDRip|HDTV|BDRip|WEB|AMZN|NF`
+  - Added missing markers: BRRip, WEB, AMZN, NF
+  - BDRip was already present in the original pattern
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-011 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded qualityPattern with additional source markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.BluRay.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.BRRip.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB-DL.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEBRip.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AMZN.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.NF.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-012 (Title extraction - remove codec markers) is the next logical step
+- The codecPattern already exists but should be verified against US-012 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+
+## 2026-02-02: US-012 - Title extraction - remove codec markers
+
+### What was done:
+- Expanded `codecPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC`
+  - New pattern: `x264|x265|H\.?264|H\.?265|HEVC|XviD|DivX|AVC|10bit|HDR10|HDR|DV`
+  - Added missing markers: 10bit, HDR, HDR10, DV (Dolby Vision)
+  - Existing pattern already covered: x264, x265, HEVC, H.264, H.265, H264, H265, AVC, XviD, DivX
+- Pattern ordering: `HDR10` placed before `HDR` to ensure longest match first
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-012 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded codecPattern with additional codec markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.x264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.x265.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HEVC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.H.264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.H264.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.10bit.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HDR.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.HDR10.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DV.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-013 (Title extraction - remove audio markers) is the next logical step
+- The audioPattern already exists and should be verified against US-013 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+
+## 2026-02-02: US-013 - Title extraction - remove audio markers
+
+### What was done:
+- Expanded `audioPattern` regex in `internal/scanner/patterns.go`
+  - Previous pattern: `AAC|AC3|DTS|DD5\.1|TrueHD|Atmos|DTS-HD|MA|FLAC`
+  - New pattern: `AAC|AC3|DTS-HD|DTS|TrueHD|FLAC|MP3|DD5\.1|DD2\.0|Atmos|7\.1|5\.1|2\.0|MA`
+  - Added missing markers: MP3, DD2.0, 5.1, 7.1, 2.0 (standalone channel configurations)
+  - Retained MA for DTS-HD MA compatibility
+- Pattern ordering: `DTS-HD` placed before `DTS` to ensure longest match first
+- Pattern remains case-insensitive via `(?i)` flag
+- Added US-013 comment to identify the change
+
+### Files modified:
+- `internal/scanner/patterns.go` - Expanded audioPattern with additional audio markers
+
+### Test cases verified (pattern matching):
+- `Movie.2020.DTS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AAC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.AC3.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DTS-HD.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.TrueHD.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.FLAC.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.MP3.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DD5.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.DD2.0.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Atmos.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.5.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.7.1.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.2.0.mkv` -> Title: 'Movie', Year: 2020 ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-014 (Title extraction - remove release groups) is the next logical step
+- The releaseGroupPattern already exists and should be verified against US-014 requirements
+- Keep pattern ordering: resolution → year → quality → codec → audio → etc.
+
+## 2026-02-02: US-014 - Title extraction - remove release groups
+
+### What was done:
+- Enhanced `releaseGroupPattern` regex in `internal/scanner/patterns.go`
+  - Added common release groups: SPARKS, GECKOS, AMIABLE, DRONES, BLOW, GALACTICA, CODEX, SKIDROW, PLAZA, CPY, RELOADED, TERMiNAL, DEFLATE, CHD, RuDE, VETO, CiNEFiLE, PSYCHD
+  - Pattern continues to match hyphenated suffixes at end of filename (e.g., -SPARKS, -GECKOS)
+- Added new `bracketedGroupPattern` regex for bracketed release groups at start/anywhere in filename
+  - Matches: [YTS], [YIFY], [RARBG], [EVO], [FGT], [YTS.MX], etc.
+  - Also matches common technical markers in brackets as fallback: [1080p], [x264], etc.
+- Updated `ExtractTitleAndYear` function to process patterns in order:
+  1. `bracketedGroupPattern` - removes [YTS], [RARBG], etc. first
+  2. `releaseGroupPattern` - removes -SPARKS, -GECKOS, etc. at end
+  3. `bracketPattern` - catches any remaining bracketed content
+
+### Files modified:
+- `internal/scanner/patterns.go` - Enhanced releaseGroupPattern, added bracketedGroupPattern, updated function
+
+### Test cases verified:
+- `Movie.2020-SPARKS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-GECKOS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-FGT.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020-YIFY.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YTS]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YIFY]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[RARBG]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[EVO]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[FGT]Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.1080p.BluRay-SPARKS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.WEB-DL-GECKOS.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `[YTS.MX]Movie.2020.1080p.BluRay.mkv` -> Title: 'Movie', Year: 2020 ✓
+- Previous tests (The Matrix, etc.) continue to pass ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files exist yet)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-015 (Title extraction - handle edition markers) is the next logical step
+- The `extraInfoPattern` already handles some edition markers but US-015 expands the list
+- Keep pattern ordering: resolution → year → quality → codec → audio → release groups → brackets
+
+## 2026-02-02: US-015 - Title extraction - handle edition markers
+
+### What was done:
+- Renamed `extraInfoPattern` to `editionPattern` in `internal/scanner/patterns.go`
+  - Provides semantic clarity about what the pattern matches
+  - Added `extraInfoPattern = editionPattern` alias for backwards compatibility
+- Expanded edition pattern to properly match all required markers:
+  - `EXTENDED\.?CUT` - matches "Extended.Cut", "ExtendedCut", "EXTENDED.CUT"
+  - `EXTENDED` - matches standalone "Extended"
+  - `DIRECTOR\'?S\.?CUT` - matches "Director's.Cut", "Director'sCut", "DirectorsCut"
+  - `DIRECTORS\.?CUT` - matches "Directors.Cut", "DirectorsCut"
+  - `UNRATED` - matches "Unrated"
+  - `THEATRICAL` - matches "Theatrical"
+  - `IMAX` - matches "IMAX"
+  - `REMASTERED` - matches "Remastered"
+  - `DC` - Director's Cut abbreviation (kept from original)
+  - `UHD` - Ultra HD marker (kept from original)
+- Removed HDR and HDR10 from edition pattern (they're already in codecPattern)
+- Updated function comment to reference edition markers instead of "extra info"
+- Created `internal/scanner/patterns_test.go` with unit tests for edition markers
+
+### Files modified:
+- `internal/scanner/patterns.go` - Renamed and expanded edition pattern
+
+### Files created:
+- `internal/scanner/patterns_test.go` - Unit tests for edition marker extraction
+
+### Test cases verified:
+- `Movie.2020.Extended.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Directors.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Director's.Cut.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Unrated.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Theatrical.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.IMAX.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `Movie.2020.Remastered.mkv` -> Title: 'Movie', Year: 2020 ✓
+- `The.Matrix.1999.Extended.Cut.1080p.BluRay.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+- `Blade.Runner.1982.Directors.Cut.2160p.mkv` -> Title: 'Blade Runner', Year: 1982 ✓
+- Case insensitive variants (extended.cut, DIRECTORS.CUT) ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (now includes patterns_test.go)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-016 (Title extraction - handle year-starting titles) is the next logical step
+- This handles movies like "2001: A Space Odyssey" and "1917" where titles start with years
+- The year extraction logic needs to distinguish between years in titles vs release years
+- Pattern ordering remains: resolution → year → quality → codec → audio → edition → release groups → brackets
+
+## 2026-02-02: US-016 - Title extraction - handle year-starting titles
+
+### What was done:
+- Implemented smart year extraction to handle movie titles that start with 4-digit years
+- Added `extractLastValidYear()` helper function in `internal/scanner/patterns.go`
+- Year extraction priority order:
+  1. Year in parentheses/brackets - definitely a release year (e.g., "(2020)" or "[2020]")
+  2. Find the LAST year that is followed by quality markers or at end of filename
+- Added new patterns:
+  - `allYearsPattern` - finds all 4-digit numbers in filename
+  - `qualityMarkerCheckPattern` - checks if text after year is a quality marker
+- Year validation restricts matches to range 1888-2050 (1888 = first film)
+- Added comprehensive unit tests to `internal/scanner/patterns_test.go`
+
+### Files modified:
+- `internal/scanner/patterns.go` - Added extractLastValidYear(), allYearsPattern, qualityMarkerCheckPattern
+
+### Files modified:
+- `internal/scanner/patterns_test.go` - Added TestYearStartingTitles with 13 test cases
+
+### Test cases verified:
+- `2001.A.Space.Odyssey.1968.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.1080p.mkv` -> Title: '1917', Year: 2019 ✓
+- `2001.A.Space.Odyssey.1968.BluRay.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.BluRay.x264.mkv` -> Title: '1917', Year: 2019 ✓
+- `1984.1984.1080p.mkv` -> Title: '1984', Year: 1984 ✓
+- `2012.2009.WEB-DL.mkv` -> Title: '2012', Year: 2009 ✓
+- `300.2006.1080p.BluRay.mkv` -> Title: '300', Year: 2006 ✓ (3-digit title, not confused as year)
+- `2001.A.Space.Odyssey.(1968).mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.(2019).mkv` -> Title: '1917', Year: 2019 ✓
+- `2001.A.Space.Odyssey.[1968].mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `The.Matrix.1999.1080p.mkv` -> Title: 'The Matrix', Year: 1999 ✓
+- `Inception.2010.BluRay.mkv` -> Title: 'Inception', Year: 2010 ✓
+- `Movie.2020.mkv` -> Title: 'Movie', Year: 2020 ✓
+- All previous US-015 edition marker tests continue to pass ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests total)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-017 (Add --test-parser CLI flag) is the next logical step
+- The smart year extraction searches backward from end of filename for valid release years
+- A year is considered valid if followed by quality markers (1080p, BluRay, x264, etc.) or at end of filename
+- Years in parentheses/brackets always take priority as they're the most explicit format
+- The algorithm falls back to the last 4-digit number if no quality markers are found (backwards compatibility)
+
+## 2026-02-02: US-017 - Add --test-parser CLI flag
+
+### What was done:
+- Added `--test-parser` flag to `cmd/scanner/main.go`
+- When flag is used, tests title extraction on provided filenames without running full scan
+- For each filename, outputs:
+  - Filename
+  - Extracted title
+  - Extracted year (or "not found")
+  - Generated slug
+  - Patterns matched (resolution, year, quality, codec, audio, language, edition, release-group, bracketed-group)
+- Supports reading filenames from stdin when no arguments provided (e.g., `echo "file.mkv" | scanner --test-parser`)
+- Returns exit code 0 on success, exit code 1 if any extraction produces empty title
+- Added `runTestParser()` function to handle the flag
+- Added `detectPatternsMatched()` helper function to identify which pattern categories matched each filename
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --test-parser flag, runTestParser(), detectPatternsMatched() functions
+
+### Usage examples:
+```bash
+# Test specific filenames
+./scanner --test-parser "The.Matrix.1999.1080p.BluRay.mkv" "2001.A.Space.Odyssey.1968.mkv"
+
+# Read from stdin
+echo -e "Movie.2020.mkv\nMovie2.2021.mkv" | ./scanner --test-parser
+```
+
+### Test cases verified:
+- `The.Matrix.1999.1080p.BluRay.x264-GROUP.mkv` -> Title: 'The Matrix', Year: 1999, Patterns: resolution, year, quality, codec, release-group ✓
+- `2001.A.Space.Odyssey.1968.mkv` -> Title: '2001 A Space Odyssey', Year: 1968 ✓
+- `1917.2019.WEB-DL.mkv` -> Title: '1917', Year: 2019, Patterns: year, quality, release-group ✓
+- `Movie.2020.Extended.Cut.1080p.mkv` -> Title: 'Movie', Year: 2020, Patterns: resolution, year, edition, release-group ✓
+- `.mkv` (empty title) -> Exit code: 1 ✓
+- Stdin input works correctly ✓
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests total in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-018 (Parse image URLs from NFO files) is the next logical step
+- The --test-parser flag is handled early in main() before any config loading or scanning
+- Pattern detection uses inline regex matching to avoid coupling with the scanner package's internal patterns
+- The detectPatternsMatched() function returns a comma-separated list of pattern categories for debugging purposes
+
+## 2026-02-02: US-018 - Parse image URLs from NFO files
+
+### What was done:
+- Added `PosterURL` and `BackdropURL` fields to `writer.Movie` struct in `internal/writer/models.go`
+  - Fields use `yaml:"-"` tag to prevent persistence to MDX files (used during processing only)
+- Updated `ConvertToMovie()` in `internal/metadata/nfo/parser.go` to extract image URLs
+- Added `extractPosterURL()` helper function:
+  - Priority: looks for thumb with "poster" aspect attribute first
+  - Fallback: uses first thumb element with a URL
+  - Trims whitespace from extracted URLs
+- Added `extractBackdropURL()` helper function:
+  - Extracts first URL from `<fanart><thumb>` elements
+  - Returns empty string if no fanart section or no thumbs with URLs
+- NFO types.go already had Thumbs and Fanart fields defined - no changes needed there
+
+### Files modified:
+- `internal/writer/models.go` - Added PosterURL and BackdropURL fields
+- `internal/metadata/nfo/parser.go` - Added extractPosterURL(), extractBackdropURL() helper functions, updated ConvertToMovie()
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-019 (Add NFO image download config option) is the next logical step
+- US-019 will add `nfo_download_images` config option with default false
+- US-020 will use PosterURL and BackdropURL to actually download images when enabled
+- The URLs are extracted but not downloaded in this US - that's US-020
+- URLs may be local paths (e.g., /config/...) or HTTP URLs - US-020 will need to validate
+
+## 2026-02-02: US-019 - Add NFO image download config option
+
+### What was done:
+- Added `NFODownloadImages bool` field to `OptionsConfig` struct in `internal/config/config.go`
+  - yaml tag: `nfo_download_images`
+  - Default value: false (Go zero value for bool - preserves existing TMDB-only behavior)
+- Updated `config/config.example.yaml` with the new option
+  - Added `nfo_download_images: false` line
+  - Added comment explaining behavior: tries NFO URLs first, falls back to TMDB
+
+### Files modified:
+- `internal/config/config.go` - Added NFODownloadImages field to OptionsConfig struct
+- `config/config.example.yaml` - Added nfo_download_images option with documentation
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-020 (Implement NFO image download with fallback) is the next logical step
+- US-020 will implement the actual download logic using `cfg.Options.NFODownloadImages` config value
+- When `nfo_download_images: true`, attempt download from PosterURL/BackdropURL first (from NFO)
+- Must validate URLs are HTTP/HTTPS (skip local paths like /config/...)
+- On download failure, fall back to TMDB image download
+- Log image source (NFO vs TMDB) in verbose mode
+
+## 2026-02-02: US-020 - Implement NFO image download with fallback
+
+### What was done:
+- Added `DownloadImageFromURL(imageURL string, outputPath string) error` method to TMDB client in `internal/metadata/tmdb.go`
+  - Validates URL is HTTP or HTTPS (returns error for local paths like /config/...)
+  - Uses existing retry logic via `doRequestWithRetry()`
+  - Same output file handling as `DownloadImage()` (creates output directory, writes file)
+- Updated cover image download logic in `cmd/scanner/main.go`:
+  - When `cfg.Options.NFODownloadImages` is true and `movie.PosterURL` is set, tries NFO URL first
+  - On NFO download failure, falls back to TMDB via existing `SearchMovie` + `DownloadImage` flow
+  - Logs image source (NFO vs TMDB) in verbose mode via `slog.Debug("downloaded cover image", "movie", ..., "source", ...)`
+- Updated backdrop image download logic in `cmd/scanner/main.go`:
+  - Same NFO-first-then-TMDB logic as cover images
+  - Logs image source (NFO vs TMDB) in verbose mode
+- When `nfo_download_images: false` (default), existing TMDB-only behavior is preserved
+
+### Files modified:
+- `internal/metadata/tmdb.go` - Added DownloadImageFromURL() method
+- `cmd/scanner/main.go` - Updated cover and backdrop download logic for NFO support
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (no test files for metadata package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-021 (Add watch folder config options) is the next logical step
+- US-021 will add `watch_mode`, `watch_debounce`, and `watch_recursive` config options
+- The NFO image download feature works in conjunction with US-018 (PosterURL/BackdropURL extraction) and US-019 (nfo_download_images config)
+- URL validation ensures only HTTP/HTTPS URLs are attempted, skipping local paths that would fail
+
+## 2026-02-02: US-021 - Add watch folder config options
+
+### What was done:
+- Added three new watch-related fields to `ScannerConfig` struct in `internal/config/config.go`:
+  - `WatchMode bool` (yaml: `watch_mode`) - Enable watch mode to monitor directories (default: false)
+  - `WatchDebounce int` (yaml: `watch_debounce`) - Seconds to wait after file change (default: 30)
+  - `WatchRecursive *bool` (yaml: `watch_recursive`) - Watch subdirectories recursively (default: true)
+- Used pointer type `*bool` for `WatchRecursive` to distinguish "not set" (nil) from "explicitly false"
+  - This allows defaulting to `true` per requirements while still allowing explicit `false` override
+- Added default value handling in `Load()` function:
+  - `WatchDebounce` defaults to 30 if 0
+  - `WatchRecursive` defaults to `true` if nil
+  - `WatchMode` defaults to false (Go zero value, no explicit handling needed)
+- Updated `config/config.example.yaml` with watch options section and comments
+
+### Files modified:
+- `internal/config/config.go` - Added watch fields to ScannerConfig, added defaults in Load()
+- `config/config.example.yaml` - Added watch_mode, watch_debounce, watch_recursive options with comments
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-022 (Implement basic watch folder functionality) is the next logical step
+- US-022 will create `internal/scanner/watcher.go` and add `--watch` flag to scanner
+- Will use `fsnotify` library for file system events
+- The config values can be accessed via `cfg.Scanner.WatchMode`, `cfg.Scanner.WatchDebounce`, and `*cfg.Scanner.WatchRecursive`
+- Remember to dereference `WatchRecursive` pointer when using: `*cfg.Scanner.WatchRecursive`
+
+## 2026-02-02: US-022 - Implement basic watch folder functionality
+
+### What was done:
+- Created `internal/scanner/watcher.go` with `Watcher` struct for monitoring directories:
+  - Uses `github.com/fsnotify/fsnotify` library for file system events
+  - `WatcherConfig` struct holds configuration (directories, extensions, debounce delay, recursive flag)
+  - `NewWatcher()` creates watcher with provided config and file handler callback
+  - `Start()` begins watching all configured directories
+  - `Stop()` gracefully stops watcher and cancels pending timers
+  - `Wait()` blocks until watcher is stopped
+- Implemented debounce logic:
+  - Tracks pending files with `pendingFiles` map and `pendingTimers` map
+  - `scheduleProcessing()` creates/resets timer for each file event
+  - After debounce delay expires, `processFile()` is called
+  - Debounce prevents processing incomplete file copies
+- Added recursive directory watching:
+  - When `recursive: true`, walks directory tree and adds all subdirectories
+  - Detects new directory creation and adds to watch list
+  - Respects `exclude_dirs` configuration for skipping directories
+- Added `--watch` flag to `cmd/scanner/main.go`:
+  - When `--watch` flag is used or `watch_mode: true` in config, enters watch mode after initial scan
+  - Creates `FileHandler` callback via `createFileHandler()` that uses existing metadata/MDX pipeline
+  - Handles SIGINT/SIGTERM signals for graceful shutdown
+- Added `createFileHandler()` function:
+  - Wraps existing metadata fetch logic (NFO priority, TMDB fallback, merging)
+  - Downloads cover and backdrop images using same logic as main scan
+  - Writes MDX files using existing `MDXWriter`
+- Added `github.com/fsnotify/fsnotify v1.9.0` dependency to `go.mod`
+
+### Files created:
+- `internal/scanner/watcher.go` - Watcher struct with fsnotify integration
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --watch flag, watch mode loop, createFileHandler()
+- `go.mod` - Added fsnotify dependency
+- `go.sum` - Updated with fsnotify checksums
+
+### Usage:
+```bash
+# Run scanner once then enter watch mode
+./scanner --watch
+
+# Or enable in config
+# config.yaml:
+# scanner:
+#   watch_mode: true
+#   watch_debounce: 30  # seconds
+#   watch_recursive: true
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-023 (Handle watch folder file events) is the next logical step
+- US-023 will add handling for file moves, renames, and deletions
+- The watcher currently handles Create and Write events; US-023 adds Rename and Remove
+- Current behavior logs warning for deletions but doesn't delete MDX (as specified)
+- The `isHiddenFile()` and `normalizeEventPath()` helpers are defined but not yet used (for future use in US-023)
+
+## 2026-02-02: US-023 - Handle watch folder file events
+
+### What was done:
+- Enhanced `handleEvent()` in `internal/scanner/watcher.go` to handle additional fsnotify events:
+  - **Remove events**: Logs warning when media file is deleted, notes that MDX is not deleted
+  - **Rename events**: Logs info when media file is renamed/moved, cancels pending processing
+  - **Directory removal**: Detects when watched directories are removed and logs appropriately
+- Added `cancelPending(path string)` helper method:
+  - Cancels any pending debounced processing for a file path
+  - Stops timer, removes from pendingFiles and pendingTimers maps
+  - Called when file is moved or deleted to prevent processing stale paths
+- Added `wasWatchedDirectory(path string) bool` helper method:
+  - Heuristic check if a path was under one of our watched root directories
+  - Used to provide useful logging when directories are removed
+- Debouncing for rapid successive events was already implemented in US-022
+- Recursive watching was already implemented in US-022
+
+### Files modified:
+- `internal/scanner/watcher.go` - Enhanced handleEvent(), added cancelPending(), wasWatchedDirectory()
+
+### Event handling behavior:
+- **Create/Write**: Schedule processing with debounce (unchanged from US-022)
+- **Rename**: Log the event, cancel pending processing (file may have moved out)
+- **Remove**: Log warning that MDX won't be deleted, cancel pending processing
+- **Directory Create**: Add to watch list if recursive (unchanged from US-022)
+- **Directory Remove**: Log that directory was removed (fsnotify auto-removes from watch list)
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (16 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-024 (Implement basic duplicate detection) is the next logical step
+- US-024 is an independent feature - creates internal/scanner/duplicates.go
+- US-024 adds --find-duplicates flag to scanner
+- The `isHiddenFile()` and `normalizeEventPath()` helpers remain available for future use
+
+## 2026-02-02: US-024 - Implement basic duplicate detection
+
+### What was done:
+- Created `internal/scanner/duplicates.go` with duplicate detection logic:
+  - `DuplicateFinder` struct with `NewDuplicateFinder(mdxDir string)` constructor
+  - `FindDuplicates() ([]DuplicateSet, error)` - scans all MDX files and returns groups of duplicates
+  - `DuplicateSet` struct containing grouping key, key type (tmdb_id or title_year), and list of movies
+  - `DuplicateMovie` struct with title, year, TMDB ID, file path, file name, slug, MDX path
+  - `readAllMDXFiles()` - reads all .mdx files and extracts YAML frontmatter
+  - `parseMDXFile()` - extracts frontmatter from a single MDX file
+  - `PrintDuplicateReport()` - outputs formatted report with duplicate sets
+- Added `--find-duplicates` flag to `cmd/scanner/main.go`
+- Added `runFindDuplicates()` function that:
+  - Loads configuration to get MDX directory
+  - Creates DuplicateFinder and calls FindDuplicates()
+  - Prints formatted report using PrintDuplicateReport()
+  - Returns exit code equal to count of duplicate sets found
+
+### Grouping logic:
+- Movies with TMDB ID > 0 are grouped by TMDB ID
+- Movies without TMDB ID are grouped by lowercase title + year
+- Only groups with more than 1 movie are returned as duplicates
+
+### Report output format:
+```
+Found N duplicate set(s):
+
+━━━ Duplicate Set 1 ━━━
+TMDB ID: 12345
+Copies: 2
+
+  [1] Movie Title (2020)
+      File: movie.mkv
+      Path: /path/to/movie.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+```
+
+### Files created:
+- `internal/scanner/duplicates.go` - Duplicate detection implementation
+
+### Files modified:
+- `cmd/scanner/main.go` - Added --find-duplicates flag and runFindDuplicates() function
+
+### Usage:
+```bash
+# Find duplicates in library
+./scanner --find-duplicates
+
+# With custom config
+./scanner --find-duplicates --config /path/to/config.yaml
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes (17 tests in scanner package)
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-025 (Add quality comparison to duplicate detection) is the next logical step
+- US-025 will add quality ranking to help users decide which duplicate to keep
+- The DuplicateMovie struct can be extended with quality fields for US-025
+- Consider adding SourceFilePath field from original video file in future
+
+## 2026-02-02: US-025 - Add quality comparison to duplicate detection
+
+### What was done:
+- Added quality extraction and ranking to duplicate detection in `internal/scanner/duplicates.go`:
+  - Added `resolutionExtractPattern` and `sourceExtractPattern` regex patterns
+  - Added `resolutionRank` map: 2160p/4K (4) > 1080p (3) > 720p/1080i (2) > 480p/720i (1)
+  - Added `sourceRank` map: BluRay (8) > BDRip/BRRip (7) > WEB-DL (6) > WEBRip (5) > HDRip/HDTV (4) > DVDRip (3) > DVDSCR/SCREENER/R5 (2) > TS/TC (1) > CAM (0)
+  - Extended `DuplicateMovie` struct with `Resolution`, `Source`, `QualityScore`, and `IsRecommended` fields
+  - Added `extractQualityInfo()` to extract resolution and source from filename
+  - Added `calculateQualityScore()` to compute combined score (resolution*10 + source)
+  - Added `markRecommended()` to mark highest quality copy in each duplicate set
+  - Updated `PrintDuplicateReport()` to show quality info and ★ RECOMMENDED marker
+  - Added `formatQualityString()`, `displayResolution()`, `displaySource()` helper functions
+- Added `--detailed` flag to `cmd/scanner/main.go`:
+  - When used with `--find-duplicates`, shows full quality breakdown with ranks and scores
+  - Updated `runFindDuplicates()` to pass detailed flag to report function
+
+### Files modified:
+- `internal/scanner/duplicates.go` - Added quality extraction, ranking, and report formatting
+- `cmd/scanner/main.go` - Added --detailed flag for quality breakdown
+
+### Quality ranking logic:
+- **Resolution ranking** (higher is better):
+  - 2160p/4K: 4
+  - 1080p: 3
+  - 720p/1080i: 2
+  - 480p/720i: 1
+  - Unknown: 0
+- **Source ranking** (higher is better):
+  - BluRay: 8
+  - BDRip/BRRip: 7
+  - WEB-DL: 6
+  - WEBRip: 5
+  - HDRip/HDTV: 4
+  - DVDRip: 3
+  - DVDSCR/SCREENER/R5: 2
+  - TS/TC: 1
+  - CAM: 0
+  - Unknown: -1 (treated as 0 for scoring)
+- **Combined score**: resolution_rank * 10 + source_rank
+  - This ensures resolution has higher weight (e.g., 2160p WEB-DL (46) > 1080p BluRay (38))
+
+### Usage:
+```bash
+# Find duplicates with quality info
+./scanner --find-duplicates
+
+# Show detailed quality breakdown
+./scanner --find-duplicates --detailed
+```
+
+### Report output format:
+```
+━━━ Duplicate Set 1 ━━━
+TMDB ID: 12345
+Copies: 2
+
+  [1] Movie Title (2020) ★ RECOMMENDED
+      File: movie.2020.2160p.BluRay.mkv
+      Quality: 2160P BluRay
+      Path: /path/to/movie.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+
+  [2] Movie Title (2020)
+      File: movie.2020.1080p.WEB-DL.mkv
+      Quality: 1080P WEB-DL
+      Path: /path/to/movie2.mkv
+      Slug: movie-title-2020
+      TMDB: https://www.themoviedb.org/movie/12345
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-026 (Add cache statistics tracking) is the next logical step
+- US-026 will add Stats() method to cache and --cache-stats flag
+- The quality extraction could be enhanced with more patterns (e.g., HDR, Atmos)
+- Consider adding file size comparison as a tiebreaker when quality scores are equal
+
+## 2026-02-03: US-026 - Add cache statistics tracking
+
+### What was done:
+- Added `CacheStats` struct to `internal/metadata/cache/cache.go`:
+  - `Hits int64` - number of cache hits
+  - `Misses int64` - number of cache misses
+  - `EntryCount int` - current number of entries in cache
+  - `HitRate() float64` - method that returns hit rate as percentage (0-100)
+- Added `Stats()` and `ResetStats()` methods to `Cache` interface
+- Implemented statistics tracking in `SQLiteCache`:
+  - Added `hits` and `misses` atomic int64 counters to struct
+  - `Get()` method increments `hits` on cache hit, `misses` on cache miss (including expired entries)
+  - `Stats()` returns `CacheStats` with current counters and entry count
+  - `ResetStats()` resets hit/miss counters to zero
+- Added `--cache-stats` flag to `cmd/scanner/main.go`:
+  - Shows cache path, TTL (days), and entry count
+  - Note that hit/miss stats are per-session (reset on each run)
+  - Exits after displaying stats
+- Added cache statistics display at end of scan:
+  - Logs hits, misses, hit rate percentage, and entry count via `slog.Info`
+  - Only displays if cache was enabled and initialized
+
+### Files modified:
+- `internal/metadata/cache/cache.go` - Added CacheStats struct, Stats() and ResetStats() to interface
+- `internal/metadata/cache/sqlite.go` - Added atomic counters, implemented Stats/ResetStats, updated Get()
+- `cmd/scanner/main.go` - Added --cache-stats flag and cache stats display at end of scan
+
+### Usage:
+```bash
+# Show cache statistics without scanning
+./scanner --cache-stats
+
+# Run scan and see cache stats at the end
+./scanner --verbose
+```
+
+### Output format:
+```
+# --cache-stats flag output:
+Cache Statistics
+================
+Cache path:    ./data/cache.db
+Cache TTL:     30 days
+Entry count:   150
+
+Note: Hit/miss statistics are tracked per session.
+Run a scan to see cache effectiveness metrics.
+
+# End of scan cache stats (via slog.Info):
+time=... level=INFO msg="cache statistics" hits=45 misses=5 hit_rate="90.0%" entry_count=150
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-027 (Improve verbose logging) is the next logical step
+- US-027 will consolidate and improve verbose logging across the codebase
+- Cache statistics use atomic counters for thread safety (useful for watch mode)
+- The hit/miss counters reset each session since SQLiteCache is created fresh each run
+- Consider persisting statistics to database in future if cross-session metrics needed
+
+## 2026-02-03: US-027 - Improve verbose logging
+
+### What was done:
+- Improved verbose logging in `cmd/scanner/main.go` with consistent structured log format
+- All debug logs now include `file` field for context (filename being processed)
+- Metadata lookup logs now show:
+  - `nfo_status`: found, not_found_or_error, or disabled
+  - `nfo_error`: error message when NFO fails
+  - `action`: what happens next (fallback_to_tmdb, tmdb_search)
+  - `nfo_title`, `nfo_tmdb_id`: extracted NFO data when found
+- TMDB enrichment logs now show:
+  - `method`: direct_id_lookup, search, search_fallback
+  - `reason`: why a particular method was chosen (direct_id_not_found, nfo_incomplete)
+  - `tmdb_id`, `search_title`, `search_year`: relevant IDs/parameters
+- Metadata merge logs show fields kept from NFO vs filled from TMDB
+- Image download logs use consistent format:
+  - `image download attempt`: file, movie, image_type (cover/backdrop), source (NFO/TMDB), url
+  - `image download failed`: includes error and action (fallback_to_tmdb)
+  - `image download success`: includes file, movie, image_type, source, path
+  - `image not available`: when TMDB has no poster/backdrop path
+- Updated `createFileHandler()` (watch mode) with same consistent logging patterns
+- Retry logging was already implemented via `RetryLogFunc` callback (from US-005)
+- Cache logging was already implemented via `CacheLogFunc` callback (from US-008)
+
+### Files modified:
+- `cmd/scanner/main.go` - Improved verbose logging throughout main scan loop and createFileHandler
+
+### Log message categories:
+| Category | Message | Fields |
+|----------|---------|--------|
+| Metadata | `metadata lookup` | file, nfo_status, nfo_error, action, nfo_title, nfo_tmdb_id |
+| TMDB | `tmdb enrichment` | file, method, reason, tmdb_id, search_title, search_year |
+| TMDB | `tmdb lookup completed` | file, lookup_method |
+| Merge | `metadata merge` | file, nfo_fields_kept, tmdb_fields_filled |
+| Image | `image download attempt` | file, movie, image_type, source, url |
+| Image | `image download failed` | file, movie, image_type, source, error, action |
+| Image | `image download success` | file, movie, image_type, source, path |
+| Image | `image not available` | file, movie, image_type, reason |
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-028 (Add configuration validation) is the next logical step
+- US-028 will add validation for new config options on load
+- The verbose logging is now consistent across main scan and watch mode
+- All debug logs include `file` field to correlate messages with specific files being processed
+- Cache/retry logging callbacks remain in place from previous implementations
+
+## 2026-02-03: US-028 - Add configuration validation
+
+### What was done:
+- Added `validate()` method to `Config` struct in `internal/config/config.go`
+- Added `log/slog` import for warning messages
+- Validation checks implemented:
+  - **retry.max_attempts**: Returns error if <= 0
+  - **retry.initial_backoff_ms**: Returns error if <= 0
+  - **cache.ttl_days**: Returns error if <= 0 when cache is enabled
+  - **cache path parent directory**: Creates parent directory if needed, tests writability by creating/deleting temp file
+  - **nfo_download_images + use_nfo**: Warns via `slog.Warn` if nfo_download_images is true but use_nfo is false
+  - **watch_mode + directories**: Warns via `slog.Warn` if watch_mode is true but no directories configured
+- All validation runs after defaults are set in `Load()` function
+- Exit with clear error message on validation failure (Load returns error)
+
+### Files modified:
+- `internal/config/config.go` - Added validate() method, added slog import
+
+### Validation logic:
+```go
+func (cfg *Config) validate() error {
+    // Check retry.max_attempts > 0
+    // Check retry.initial_backoff_ms > 0
+    // Check cache path parent writable (when cache enabled)
+    // Warn: nfo_download_images && !use_nfo
+    // Warn: watch_mode && len(directories) == 0
+    // Check cache.ttl_days > 0 (when cache enabled)
+}
+```
+
+### Verification:
+- `go build ./...` - passes
+- `go test ./...` - passes
+- `go vet ./...` - passes
+- Note: Website has no typecheck/test npm scripts configured
+
+### Notes for next developer:
+- US-028 is the LAST user story in the PRD (v1.2 Scanner Overhaul)
+- All 28 user stories are now complete!
+- PRD is now 100% complete
+- Consider future enhancements: concurrent scanning, SQLite library database, web UI
+

@@ -11,6 +11,10 @@ A multimedia file scanner that discovers movie files, scrapes metadata from TMDB
 - 📊 Collection statistics (total movies, size, runtime)
 - 🐳 Docker support for easy deployment
 - ⚡ Smart scanning - only processes new files (existing movies are skipped)
+- 📄 Jellyfin NFO file support with TMDB fallback and NFO image downloads
+- 👀 Watch mode - automatically scan when new files are added
+- 🔁 Duplicate detection with quality comparison and recommendations
+- 💾 SQLite cache for TMDB API responses with hit/miss statistics
 - 🖼️ Automatic cover and backdrop image downloads
 - 📱 Fully responsive design with dark theme
 
@@ -371,6 +375,19 @@ http://localhost:4321
 
 # Custom config file
 ./scanner --config /path/to/config.yaml
+
+# Watch mode - continuously monitor directories for new files
+./scanner --watch
+
+# Test title extraction without running a full scan
+./scanner --test-parser "Movie.Name.2020.1080p.BluRay.mkv"
+
+# Find duplicate movies in your library
+./scanner --find-duplicates
+./scanner --find-duplicates --detailed
+
+# Show cache hit/miss statistics
+./scanner --cache-stats
 ```
 
 ### Update Script
@@ -426,11 +443,31 @@ movieVault/
 - `auto_build`: Automatically build Astro after scanning
 - `cleanup_missing`: Remove MDX for deleted movie files
 
+### Watch Mode Settings
+
+- `watch_mode`: Enable continuous directory monitoring (`false` by default)
+- `watch_debounce`: Seconds to wait after a file change before processing (default: `30`)
+- `watch_recursive`: Watch subdirectories recursively (default: `true`)
+
 ### Options
 
 - `rate_limit_delay`: Milliseconds between TMDB API requests (250 recommended)
 - `download_covers`: Download cover images locally
 - `download_backdrops`: Download backdrop images
+- `use_nfo`: Enable Jellyfin `.nfo` file parsing (default: `true`)
+- `nfo_fallback_tmdb`: Fall back to TMDB if NFO is missing or incomplete (default: `true`)
+- `nfo_download_images`: Download images from NFO URLs before trying TMDB (default: `false`)
+
+### Retry Settings
+
+- `max_attempts`: Number of retries for transient API errors (default: `3`)
+- `initial_backoff_ms`: Starting backoff delay in ms, doubles each retry (default: `1000`)
+
+### Cache Settings
+
+- `enabled`: Enable local SQLite cache for TMDB responses (default: `true`)
+- `path`: Path to the SQLite cache database file (default: `./data/cache.db`)
+- `ttl_days`: Days before a cache entry expires (default: `30`)
 
 ## How the Scanner Works
 
@@ -460,8 +497,10 @@ The scanner extracts movie titles from filenames by removing:
 - Year markers: `(2023)`, `[2023]`
 - Quality: `1080p`, `720p`, `4K`, `BluRay`, `WEB-DL`
 - Codecs: `x264`, `x265`, `HEVC`
-- Audio: `AAC`, `DTS`, `DD5.1`
-- Release groups: `-GROUP`
+- Audio: `AAC`, `DTS`, `DD5.1`, `DTS-HD`, `TrueHD`, `Atmos`, `FLAC`
+- Release groups: `-SPARKS`, `-YIFY`, `[YTS]`, `[RARBG]`
+- Edition markers: `Extended`, `Director's Cut`, `IMAX`, `Remastered`, `Theatrical`
+- Year-starting titles: `2001.A.Space.Odyssey.1968.mkv` → "2001 A Space Odyssey" (1968)
 
 **Examples:**
 - `The.Matrix.1999.1080p.BluRay.x264-GROUP.mkv` → "The Matrix" (1999)
@@ -546,11 +585,13 @@ TMDB has generous rate limits, but to be safe:
 - TV show support with episode tracking
 - Watched status tracking
 - User ratings and notes
-- Duplicate detection
 - Video thumbnail generation
 - Collections/playlists
 - Statistics dashboard
 - PWA support for offline access
+- IMDb integration (OMDb API)
+- Multi-format NFO support (Kodi, Plex, Emby)
+- NFO validation and repair
 
 ## Credits
 

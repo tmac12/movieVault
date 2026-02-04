@@ -13,6 +13,10 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  # Watch mode settings (US-021) - monitor directories for new/changed files
+  watch_mode: false        # Enable watch mode to continuously monitor directories (default: false)
+  watch_debounce: 30       # Seconds to wait after file change before processing (default: 30)
+  watch_recursive: true    # Watch subdirectories recursively (default: true)
 
 output:
   mdx_dir: "./website/src/content/movies"     # Where to write MDX files
@@ -27,3 +31,13 @@ options:
   download_backdrops: true  # Download backdrop images
   use_nfo: true  # Enable .nfo file parsing for metadata
   nfo_fallback_tmdb: true  # Fall back to TMDB if .nfo is missing or incomplete
+  nfo_download_images: false  # Download images from NFO file URLs (when true, tries NFO URLs first, falls back to TMDB)
+
+retry:
+  max_attempts: 3         # Maximum number of retry attempts for transient API errors
+  initial_backoff_ms: 1000  # Initial backoff delay in milliseconds (doubles each retry)
+
+cache:
+  enabled: true           # Enable local caching of TMDB API responses
+  path: "./data/cache.db" # Path to SQLite cache database file
+  ttl_days: 30            # Cache entry time-to-live in days (entries expire after this period)

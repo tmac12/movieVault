@@ -19,26 +19,26 @@ func NewParser() *Parser {
 	return &Parser{}
 }
 
-// FindNFOFile locates the .nfo file for a given video file
+// FindNFOFile locates the .nfo file for a given video file.
 // Priority order:
-// 1. {filename}.nfo (e.g., "The Matrix (1999).nfo")
-// 2. movie.nfo (Jellyfin standard)
+// 1. movie.nfo (Jellyfin/Kodi shared metadata — preferred for multi-part movies)
+// 2. {filename}.nfo (per-file fallback, e.g. "The Matrix (1999).nfo")
 func (p *Parser) FindNFOFile(videoPath string) (string, error) {
 	dir := filepath.Dir(videoPath)
 	baseNameWithExt := filepath.Base(videoPath)
 	ext := filepath.Ext(baseNameWithExt)
 	baseName := strings.TrimSuffix(baseNameWithExt, ext)
 
-	// Try filename.nfo first
-	fileNameNFO := filepath.Join(dir, baseName+".nfo")
-	if _, err := os.Stat(fileNameNFO); err == nil {
-		return fileNameNFO, nil
-	}
-
-	// Try movie.nfo
+	// Try movie.nfo first (shared metadata, reliable for multi-part titles)
 	movieNFO := filepath.Join(dir, "movie.nfo")
 	if _, err := os.Stat(movieNFO); err == nil {
 		return movieNFO, nil
+	}
+
+	// Fall back to filename.nfo
+	fileNameNFO := filepath.Join(dir, baseName+".nfo")
+	if _, err := os.Stat(fileNameNFO); err == nil {
+		return fileNameNFO, nil
 	}
 
 	return "", fmt.Errorf("no .nfo file found for %s", videoPath)
@@ -100,7 +100,55 @@ func (p *Parser) ConvertToMovie(nfo *NFOMovie) *writer.Movie {
 		movie.Cast[i] = nfo.Actors[i].Name
 	}
 
+	// Extract poster URL from <thumb> elements (US-018)
+	// Look for poster aspect or use first thumb as poster
+	movie.PosterURL = extractPosterURL(nfo.Thumbs)
+
+	// Extract backdrop URL from <fanart><thumb> elements (US-018)
+	movie.BackdropURL = extractBackdropURL(nfo.Fanart)
+
 	return movie
+}
+
+// extractPosterURL finds the best poster URL from NFO thumb elements
+// Priority: "poster" aspect > first thumb with URL
+func extractPosterURL(thumbs []NFOThumb) string {
+	if len(thumbs) == 0 {
+		return ""
+	}
+
+	// First look for explicit poster aspect
+	for _, thumb := range thumbs {
+		if strings.EqualFold(thumb.Aspect, "poster") && thumb.URL != "" {
+			return strings.TrimSpace(thumb.URL)
+		}
+	}
+
+	// Fall back to first thumb with a URL
+	for _, thumb := range thumbs {
+		if thumb.URL != "" {
+			return strings.TrimSpace(thumb.URL)
+		}
+	}
+
+	return ""
+}
+
+// extractBackdropURL finds the best backdrop URL from NFO fanart elements
+// Returns first backdrop/fanart thumb URL found
+func extractBackdropURL(fanart *NFOFanart) string {
+	if fanart == nil || len(fanart.Thumbs) == 0 {
+		return ""
+	}
+
+	// Return first fanart thumb with a URL
+	for _, thumb := range fanart.Thumbs {
+		if thumb.URL != "" {
+			return strings.TrimSpace(thumb.URL)
+		}
+	}
+
+	return ""
 }
 
 // GetMovieFromNFO is the main entry point: finds, parses, and converts NFO to Movie

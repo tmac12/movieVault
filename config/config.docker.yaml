@@ -14,6 +14,9 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  watch_mode: false        # Enable watch mode to continuously monitor directories
+  watch_debounce: 30       # Seconds to wait after file change before processing
+  watch_recursive: true    # Watch subdirectories recursively
 
 output:
   mdx_dir: "/data/movies"           # Persistent storage in Docker
@@ -28,3 +31,13 @@ options:
   download_backdrops: true
   use_nfo: true
   nfo_fallback_tmdb: true
+  nfo_download_images: false  # Download images from NFO file URLs (when true, tries NFO URLs first, falls back to TMDB)
+
+retry:
+  max_attempts: 3           # Maximum number of retry attempts for transient API errors
+  initial_backoff_ms: 1000  # Initial backoff delay in milliseconds (doubles each retry)
+
+cache:
+  enabled: true             # Enable local caching of TMDB API responses
+  path: "/data/cache.db"    # Path to SQLite cache database file
+  ttl_days: 30              # Cache entry time-to-live in days (entries expire after this period)

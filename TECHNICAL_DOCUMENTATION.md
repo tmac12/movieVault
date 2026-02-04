@@ -29,11 +29,14 @@ MovieVault uses a two-part architecture:
          │
          ▼
 ┌─────────────────┐      ┌──────────────┐
-│   Go Scanner    │─────▶│  TMDB API    │
-│   - File Walk   │      │  (Metadata)  │
-│   - Parse Names │      └──────────────┘
-│   - Fetch Meta  │
-└────────┬────────┘
+│   Go Scanner    │─────▶│  NFO Files   │ (priority)
+│   - File Walk   │      └──────────────┘
+│   - Parse Names │      ┌──────────────┐
+│   - NFO Parse   │─────▶│  TMDB API    │ (fallback)
+│   - Fetch Meta  │      └──────────────┘
+│   - Watch Mode  │      ┌──────────────┐
+└────────┬────────┘      │ SQLite Cache │
+         │               └──────────────┘
          │
          ▼
 ┌─────────────────┐
@@ -581,16 +584,26 @@ Command-line interface for running the scanner.
 
 ```go
 var (
-    configPath   = flag.String("config", "./config/config.yaml",
-                              "Path to configuration file")
-    forceRefresh = flag.Bool("force-refresh", false,
-                            "Re-fetch all metadata from TMDB")
-    noBuild      = flag.Bool("no-build", false,
-                            "Skip Astro build step")
-    dryRun       = flag.Bool("dry-run", false,
-                            "Show what would be done")
-    verbose      = flag.Bool("verbose", false,
-                            "Show detailed logging")
+    configPath     = flag.String("config", "./config/config.yaml",
+                                "Path to configuration file")
+    forceRefresh   = flag.Bool("force-refresh", false,
+                              "Re-fetch all metadata from TMDB")
+    noBuild        = flag.Bool("no-build", false,
+                              "Skip Astro build step")
+    dryRun         = flag.Bool("dry-run", false,
+                              "Show what would be done")
+    verbose        = flag.Bool("verbose", false,
+                              "Show detailed logging")
+    watch          = flag.Bool("watch", false,
+                              "Watch directories for new files continuously")
+    testParser     = flag.Bool("test-parser", false,
+                              "Test title extraction on given filenames")
+    findDuplicates = flag.Bool("find-duplicates", false,
+                              "Scan MDX files for duplicate movies")
+    detailed       = flag.Bool("detailed", false,
+                              "Show quality breakdown (used with --find-duplicates)")
+    cacheStats     = flag.Bool("cache-stats", false,
+                              "Display cache hit/miss statistics and exit")
 )
 ```
 
@@ -677,6 +690,184 @@ func buildAstroSite() error {
 
     return buildCmd.Run()
 }
+```
+
+---
+
+### 7. NFO Parser (`internal/metadata/nfo/`)
+
+#### Purpose
+Parse Jellyfin `.nfo` XML files as a priority metadata source before falling back to TMDB.
+
+#### File Discovery
+
+NFO files are located using a two-step priority search:
+
+```go
+func (p *Parser) FindNFOFile(videoPath string) (string, error) {
+    // 1. {filename}.nfo — matches the video filename exactly
+    fileNameNFO := filepath.Join(dir, baseName+".nfo")
+
+    // 2. movie.nfo — Jellyfin/Kodi convention in the same directory
+    movieNFO := filepath.Join(dir, "movie.nfo")
+}
+```
+
+#### Parsing & Conversion
+
+`ParseNFOFile()` unmarshals the XML into `NFOMovie` structs defined in `types.go`. `ConvertToMovie()` maps NFO fields to the canonical `writer.Movie`:
+
+- Joins multiple `<director>` elements with `", "`
+- Extracts top 5 cast members from `<actor>` elements
+- Falls back to parsing year from `<premiered>` if `<year>` is empty
+- Extracts poster URL from `<thumb>` elements (prefers `aspect="poster"`)
+- Extracts backdrop URL from `<fanart><thumb>` elements
+
+#### Image URL Extraction
+
+When `nfo_download_images` is enabled, poster and backdrop URLs are extracted from the NFO and attempted first. TMDB images are used as fallback if the NFO URLs fail or are absent.
+
+```go
+// Priority: explicit poster aspect > first thumb with URL
+func extractPosterURL(thumbs []NFOThumb) string { ... }
+
+// Returns first fanart thumb URL found
+func extractBackdropURL(fanart *NFOFanart) string { ... }
+```
+
+`PosterURL` and `BackdropURL` are transient fields on the `Movie` struct (tagged `yaml:"-"`) — used during image download but not persisted to MDX.
+
+---
+
+### 8. Watch Mode (`internal/scanner/watcher.go`)
+
+#### Purpose
+Continuously monitor configured directories for new video files and automatically process them through the metadata pipeline.
+
+#### Architecture
+
+Watch mode uses the `fsnotify` library (v1.9.0) for cross-platform filesystem event monitoring:
+
+```go
+type Watcher struct {
+    watcher *fsnotify.Watcher
+    config  WatchConfig          // debounce delay, recursive flag
+    handler FileHandler          // callback to process new files
+    pending map[string]*time.Timer  // debounce timers per file
+}
+```
+
+#### Debounce Mechanism
+
+Large files (movie downloads) take time to copy. A configurable debounce delay prevents processing a file before it is fully written:
+
+1. File creation event received
+2. Timer started (default: 30 seconds)
+3. If another write event arrives for the same file, timer resets
+4. When timer fires, file is handed to the processing pipeline
+
+#### Event Handling
+
+| Event  | Behavior |
+|--------|----------|
+| Create | Start debounce timer → process when stable |
+| Write  | Reset debounce timer for that file |
+| Rename | Cancel pending timer, log the move |
+| Remove | Cancel pending timer, log warning (MDX not auto-deleted) |
+
+#### Lifecycle
+
+Watch mode runs until interrupted by `SIGINT` or `SIGTERM`, which trigger graceful shutdown of all pending timers and the fsnotify watcher.
+
+---
+
+### 9. Duplicate Detection (`internal/scanner/duplicates.go`)
+
+#### Purpose
+Identify movies that appear multiple times in the library, and recommend which copy to keep based on quality.
+
+#### Detection Logic
+
+Duplicates are grouped by two methods:
+
+1. **TMDB ID match** — movies sharing the same `tmdbId` in their MDX frontmatter
+2. **Title + Year match** — for movies without a TMDB ID, normalized title and release year are compared
+
+```go
+type DuplicateSet struct {
+    Movies []DuplicateMovie
+}
+
+type DuplicateMovie struct {
+    FilePath      string
+    Resolution    string  // e.g. "1080p"
+    Source        string  // e.g. "BluRay"
+    QualityScore  int     // combined ranking score
+    IsRecommended bool    // highest quality in the set
+}
+```
+
+#### Quality Scoring
+
+Each copy receives a composite score: `resolution_rank × 10 + source_rank`.
+
+**Resolution ranks:**
+
+| Resolution   | Rank |
+|--------------|------|
+| 2160p / 4K   | 4    |
+| 1080p        | 3    |
+| 720p / 1080i | 2    |
+| 480p / 720i  | 1    |
+
+**Source ranks:**
+
+| Source         | Rank |
+|----------------|------|
+| BluRay         | 8    |
+| BRRip          | 7    |
+| WEB-DL         | 6    |
+| WEBRip         | 5    |
+| HDRip / HDTV   | 4    |
+| DVDRip         | 3    |
+| DVDScr         | 2    |
+| TS / TC        | 1    |
+| CAM            | 0    |
+
+The copy with the highest combined score is marked `IsRecommended`. The `--detailed` flag shows the full score breakdown per copy.
+
+---
+
+### 10. Cache System (`internal/metadata/cache/`)
+
+#### Purpose
+Persist TMDB API responses locally in a SQLite database to avoid redundant API calls across scanner runs.
+
+#### Architecture
+
+```go
+type SQLiteCache struct {
+    db    *sql.DB
+    ttl   time.Duration      // configurable via cache.ttl_days
+    stats CacheStats         // atomic hit/miss counters
+}
+
+type CacheStats struct {
+    Hits       int64
+    Misses     int64
+    EntryCount int64
+}
+```
+
+#### Lifecycle
+
+1. On lookup, check cache first — increment `Hits` or `Misses` accordingly
+2. On miss, fetch from TMDB, store result with a `cached_at` timestamp
+3. Entries older than `ttl_days` are treated as expired
+4. `--cache-stats` flag prints a summary without triggering a scan:
+
+```
+Cache Statistics: hits=450, misses=50, hit_rate=90.0%, entry_count=500
 ```
 
 ---
@@ -1171,17 +1362,20 @@ const genres = Array.from(allGenres).sort();
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 3. TMDB API SEARCH                                          │
-│ Search: "The Matrix" (year: 1999)                           │
+│ 3. METADATA LOOKUP                                          │
+│ Priority 1: Parse NFO file (if use_nfo enabled)             │
+│ Priority 2: Search TMDB API (fallback)                      │
+│ Priority 3: Merge NFO + TMDB if NFO data is incomplete      │
 │ Result: TMDB ID 603                                         │
 └─────────┬───────────────────────────────────────────────────┘
           │
           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. FETCH DETAILS                                            │
+│ 4. FETCH DETAILS (TMDB, if needed)                          │
 │ GET /movie/603 → Details                                    │
 │ GET /movie/603/credits → Cast & Crew                        │
 │ Rate limit: Wait 250ms between requests                     │
+│ Results cached in SQLite for future runs                    │
 └─────────┬───────────────────────────────────────────────────┘
           │
           ▼
