@@ -164,6 +164,13 @@ func main() {
 
 	slog.Info("scan complete", "files_found", len(files))
 
+	// Filter out secondary discs (CD2+) when CD1 exists in the same directory
+	files, skippedDiscs := scanner.FilterMultiDiscDuplicates(files)
+	for _, skip := range skippedDiscs {
+		slog.Info("multi-disc: skipping secondary disc",
+			"file", skip.FileName, "disc", skip.DiscNumber, "kept", skip.KeptFile)
+	}
+
 	// Filter files based on force-refresh flag
 	var filesToProcess []scanner.FileInfo
 	if *forceRefresh {
@@ -264,6 +271,7 @@ func main() {
 	nfoCount := 0
 	tmdbCount := 0
 	mixedCount := 0
+	producedSlugs := make(map[string]bool) // safety net: prevent two files from writing the same slug
 
 	for i, file := range filesToProcess {
 		slog.Info("processing file",
@@ -400,6 +408,13 @@ func main() {
 
 		// Generate clean slug from metadata title (not from filename)
 		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
+
+		// Safety net: skip if another file already produced this slug this run
+		if producedSlugs[movie.Slug] {
+			slog.Info("skipping: slug already produced this run", "slug", movie.Slug, "file", file.FileName)
+			continue
+		}
+		producedSlugs[movie.Slug] = true
 
 		// Add file information
 		movie.FilePath = file.Path
@@ -904,6 +919,14 @@ func detectPatternsMatched(filename string) string {
 func createFileHandler(cfg *config.Config, tmdbClient *metadata.Client, mdxWriter *writer.MDXWriter) scanner.FileHandler {
 	return func(file scanner.FileInfo) error {
 		slog.Info("watch mode: processing file", "filename", file.FileName)
+
+		// Skip secondary discs when a disc-1 sibling exists in the same directory
+		if file.DiscNumber > 1 {
+			if scanner.PrimarySiblingExists(file, cfg.Scanner.Extensions) {
+				slog.Info("watch: skipping secondary disc", "file", file.FileName, "disc", file.DiscNumber)
+				return nil
+			}
+		}
 
 		// Fetch metadata from NFO or TMDB (same logic as main scan, US-027: verbose logging)
 		var movie *writer.Movie

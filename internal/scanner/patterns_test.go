@@ -42,6 +42,146 @@ func TestYearStartingTitles(t *testing.T) {
 	}
 }
 
+func TestExtractDiscNumber(t *testing.T) {
+	testCases := []struct {
+		filename string
+		expected int
+	}{
+		// Basic disc markers
+		{"Movie.CD1.avi", 1},
+		{"Movie.CD2.avi", 2},
+		{"Movie.Disc1.avi", 1},
+		{"Movie.Disc2.avi", 2},
+		{"Movie.Disk1.avi", 1},
+		{"Movie.Part2.avi", 2},
+		{"Movie.Pt1.avi", 1},
+		// Separator variants
+		{"Movie-CD1.avi", 1},
+		{"Movie_CD2.avi", 2},
+		{"Movie CD1.avi", 1},
+		{"Movie.CD.1.avi", 1},
+		{"Movie-Disc-2.avi", 2},
+		// Case insensitivity
+		{"Movie.cd1.avi", 1},
+		{"Movie.CD1.avi", 1},
+		{"Movie.Cd2.avi", 2},
+		{"Movie.DISC1.avi", 1},
+		{"Movie.part2.avi", 2},
+		// Real bug filenames from the library
+		{"Rapunzel.L.Intreccio.della.Torre.2010.Italian.BDRip.Xvid-TRL.CD1.avi", 1},
+		{"Rapunzel.L.Intreccio.della.Torre.2010.Italian.BDRip.Xvid-TRL.CD2.avi", 2},
+		{"La.Bestia.nel.Cuore.2005.Italian.DVDRip.Xvid-GBM.CD1.avi", 1},
+		{"La.Bestia.nel.Cuore.2005.Italian.DVDRip.Xvid-GBM.CD2.avi", 2},
+		// Negative cases — no disc marker
+		{"Movie.2020.avi", 0},
+		{"Movie.avi", 0},
+		// "ACDC" should NOT match — no separator before "CD"
+		{"ACDC.Greatest.Hits.2020.avi", 0},
+		{"The.ACDC.Story.2019.mkv", 0},
+	}
+
+	for _, tc := range testCases {
+		got := ExtractDiscNumber(tc.filename)
+		if got != tc.expected {
+			t.Errorf("ExtractDiscNumber(%q) = %d, want %d", tc.filename, got, tc.expected)
+		}
+	}
+}
+
+func TestFilterMultiDiscDuplicates(t *testing.T) {
+	testCases := []struct {
+		name          string
+		input         []FileInfo
+		wantCount     int   // expected number of kept files
+		wantSkipped   int   // expected number of skipped files
+		wantFileNames []string // FileNames that should be in the output
+	}{
+		{
+			name: "CD1+CD2 same dir — CD2 removed",
+			input: []FileInfo{
+				{Path: "/movies/Movie.CD1.avi", FileName: "Movie.CD1.avi", Title: "Movie", Year: 2020, DiscNumber: 1},
+				{Path: "/movies/Movie.CD2.avi", FileName: "Movie.CD2.avi", Title: "Movie", Year: 2020, DiscNumber: 2},
+			},
+			wantCount:     1,
+			wantSkipped:   1,
+			wantFileNames: []string{"Movie.CD1.avi"},
+		},
+		{
+			name: "CD2 only — kept (no CD1 to anchor to)",
+			input: []FileInfo{
+				{Path: "/movies/Movie.CD2.avi", FileName: "Movie.CD2.avi", Title: "Movie", Year: 2020, DiscNumber: 2},
+			},
+			wantCount:     1,
+			wantSkipped:   0,
+			wantFileNames: []string{"Movie.CD2.avi"},
+		},
+		{
+			name: "single file no disc — untouched",
+			input: []FileInfo{
+				{Path: "/movies/Solo.Movie.avi", FileName: "Solo.Movie.avi", Title: "Solo Movie", Year: 2021, DiscNumber: 0},
+			},
+			wantCount:     1,
+			wantSkipped:   0,
+			wantFileNames: []string{"Solo.Movie.avi"},
+		},
+		{
+			name: "two different movies each with CD1+CD2",
+			input: []FileInfo{
+				{Path: "/movies/Alpha.CD1.avi", FileName: "Alpha.CD1.avi", Title: "Alpha", Year: 2020, DiscNumber: 1},
+				{Path: "/movies/Alpha.CD2.avi", FileName: "Alpha.CD2.avi", Title: "Alpha", Year: 2020, DiscNumber: 2},
+				{Path: "/movies/Beta.CD1.avi", FileName: "Beta.CD1.avi", Title: "Beta", Year: 2021, DiscNumber: 1},
+				{Path: "/movies/Beta.CD2.avi", FileName: "Beta.CD2.avi", Title: "Beta", Year: 2021, DiscNumber: 2},
+			},
+			wantCount:     2,
+			wantSkipped:   2,
+			wantFileNames: []string{"Alpha.CD1.avi", "Beta.CD1.avi"},
+		},
+		{
+			name: "CD1+CD2 in different dirs — both kept",
+			input: []FileInfo{
+				{Path: "/movies/dirA/Movie.CD1.avi", FileName: "Movie.CD1.avi", Title: "Movie", Year: 2020, DiscNumber: 1},
+				{Path: "/movies/dirB/Movie.CD2.avi", FileName: "Movie.CD2.avi", Title: "Movie", Year: 2020, DiscNumber: 2},
+			},
+			wantCount:     2,
+			wantSkipped:   0,
+			wantFileNames: []string{"Movie.CD1.avi", "Movie.CD2.avi"},
+		},
+		{
+			name: "mixed disc and non-disc files",
+			input: []FileInfo{
+				{Path: "/movies/Single.avi", FileName: "Single.avi", Title: "Single", Year: 2019, DiscNumber: 0},
+				{Path: "/movies/Multi.CD1.avi", FileName: "Multi.CD1.avi", Title: "Multi", Year: 2020, DiscNumber: 1},
+				{Path: "/movies/Multi.CD2.avi", FileName: "Multi.CD2.avi", Title: "Multi", Year: 2020, DiscNumber: 2},
+			},
+			wantCount:     2,
+			wantSkipped:   1,
+			wantFileNames: []string{"Single.avi", "Multi.CD1.avi"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			kept, skipped := FilterMultiDiscDuplicates(tc.input)
+			if len(kept) != tc.wantCount {
+				t.Errorf("kept %d files, want %d", len(kept), tc.wantCount)
+			}
+			if len(skipped) != tc.wantSkipped {
+				t.Errorf("skipped %d files, want %d", len(skipped), tc.wantSkipped)
+			}
+			// Verify exact set of kept filenames
+			gotNames := make(map[string]bool)
+			for _, f := range kept {
+				gotNames[f.FileName] = true
+			}
+			for _, want := range tc.wantFileNames {
+				if !gotNames[want] {
+					t.Errorf("expected %q in kept files, but not found", want)
+				}
+			}
+		})
+	}
+}
+
 func TestEditionMarkers(t *testing.T) {
 	testCases := []struct {
 		filename     string

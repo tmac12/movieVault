@@ -43,6 +43,12 @@ var (
 	editionPattern = regexp.MustCompile(`(?i)\b(EXTENDED\.?CUT|EXTENDED|DIRECTOR\'?S\.?CUT|DIRECTORS\.?CUT|UNRATED|THEATRICAL|IMAX|REMASTERED|DC|UHD)\b`)
 	// Legacy alias for backwards compatibility
 	extraInfoPattern = editionPattern
+	// multiDiscPattern detects CD/Disc/Disk/Part/Pt markers in filenames.
+	// Requires a separator before the keyword to avoid matching embedded words like "ACDC".
+	// Captures the disc number as group 1.
+	multiDiscPattern = regexp.MustCompile(`(?i)[\.\s_-](?:CD|Disc|Disk|Part|Pt)[\.\s_-]?(\d+)(?:[\.\s_-]|$)`)
+	// discMarkerInTitle strips disc markers from a title string (used for grouping normalization)
+	discMarkerInTitle = regexp.MustCompile(`(?i)\b(cd|disc|disk|part|pt)\s*\d+\b`)
 )
 
 // ExtractTitleAndYear extracts the movie title and year from a filename
@@ -200,4 +206,24 @@ func CleanTitle(title string) string {
 	}
 
 	return strings.Join(words, " ")
+}
+
+// ExtractDiscNumber returns the disc/part number from a filename, or 0 if none found.
+// Examples: "Movie.CD1.avi" → 1, "Movie.Part2.avi" → 2, "Movie.avi" → 0
+func ExtractDiscNumber(filename string) int {
+	name := strings.TrimSuffix(filename, filepath.Ext(filename))
+	match := multiDiscPattern.FindStringSubmatch(name)
+	if len(match) < 2 {
+		return 0
+	}
+	n, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// normalizeTitle lowercases and strips disc markers for grouping purposes.
+func normalizeTitle(title string) string {
+	return strings.TrimSpace(discMarkerInTitle.ReplaceAllString(strings.ToLower(title), ""))
 }
