@@ -14,18 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Verify GHCR access
-        run: |
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              "https://api.github.com/repos/${{ github.repository }}/packages/docker/movievault")
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Package 'movievault' is not linked to this repo (HTTP $HTTP_CODE). Push will 403."
-            echo "::error::Fix: https://github.com/${{ github.repository_owner }}?tab=packages → movievault → Settings → Link repository"
-            exit 1
-          fi
-          echo "OK — package is linked. GITHUB_TOKEN has push access."
-              
       - name: Checkout
         uses: actions/checkout@v4
 
