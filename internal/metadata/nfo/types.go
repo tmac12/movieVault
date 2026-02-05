@@ -18,6 +18,7 @@ type NFOMovie struct {
 	IMDbID    string      `xml:"imdbid"`
 	Thumbs    []NFOThumb  `xml:"thumb"`
 	Fanart    *NFOFanart  `xml:"fanart"`
+	Art       *NFOArt     `xml:"art"`
 }
 
 // NFOActor represents an actor in the .nfo file
@@ -36,4 +37,10 @@ type NFOThumb struct {
 // NFOFanart represents fanart/backdrop images
 type NFOFanart struct {
 	Thumbs []NFOThumb `xml:"thumb"`
+}
+
+// NFOArt represents the <art> block used by Jellyfin/Kodi
+type NFOArt struct {
+	Poster string `xml:"poster"`
+	Fanart string `xml:"fanart"`
 }

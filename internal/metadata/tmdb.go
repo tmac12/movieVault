@@ -513,16 +513,16 @@ func (c *Client) DownloadImage(imagePath string, outputPath string, imageType st
 	return nil
 }
 
-// DownloadImageFromURL downloads an image from an arbitrary URL to a local path (US-020)
-// Used for downloading images from NFO-provided URLs
+// DownloadImageFromURL downloads an image from an arbitrary URL or copies from a local path (US-020)
+// Used for downloading images from NFO-provided URLs or local filesystem paths
 func (c *Client) DownloadImageFromURL(imageURL string, outputPath string) error {
 	if imageURL == "" {
 		return fmt.Errorf("image URL is empty")
 	}
 
-	// Validate URL is HTTP or HTTPS (skip local paths like /config/...)
+	// Local filesystem path — copy directly
 	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
-		return fmt.Errorf("invalid URL scheme: must be http:// or https://, got: %s", imageURL)
+		return copyLocalImage(imageURL, outputPath)
 	}
 
 	// Download image with retry
@@ -555,6 +555,31 @@ func (c *Client) DownloadImageFromURL(imageURL string, outputPath string) error 
 
 	// Rate limiting
 	time.Sleep(c.rateDelay)
+
+	return nil
+}
+
+// copyLocalImage copies an image from a local filesystem path to the output path
+func copyLocalImage(srcPath string, outputPath string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("failed to open local image %s: %w", srcPath, err)
+	}
+	defer src.Close()
+
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	dst, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return fmt.Errorf("failed to copy local image: %w", err)
+	}
 
 	return nil
 }

@@ -107,6 +107,14 @@ func (p *Parser) ConvertToMovie(nfo *NFOMovie) *writer.Movie {
 	// Extract backdrop URL from <fanart><thumb> elements (US-018)
 	movie.BackdropURL = extractBackdropURL(nfo.Fanart)
 
+	// Fall back to <art> block (Jellyfin/Kodi standard)
+	if movie.PosterURL == "" && nfo.Art != nil && nfo.Art.Poster != "" {
+		movie.PosterURL = strings.TrimSpace(nfo.Art.Poster)
+	}
+	if movie.BackdropURL == "" && nfo.Art != nil && nfo.Art.Fanart != "" {
+		movie.BackdropURL = strings.TrimSpace(nfo.Art.Fanart)
+	}
+
 	return movie
 }
 
