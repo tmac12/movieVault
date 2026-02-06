@@ -1,7 +1,7 @@
 # MovieVault - Future Roadmap
 
-**Last Updated:** February 3, 2026
-**Current Version:** 1.3.0
+**Last Updated:** February 6, 2026
+**Current Version:** 1.3.2
 
 This document outlines potential improvements, feature requests, and enhancement ideas for the MovieVault project. Items are categorized by area and prioritized based on impact, complexity, and user demand.
 
@@ -60,10 +60,12 @@ if nfo.Fanart != nil && len(nfo.Fanart.Thumbs) > 0 {
 - [x] Add fallback to TMDB on failure
 - [x] Support both local and remote URLs
 - [x] Add config option: `nfo_download_images: bool`
+- [x] Parse `<art><poster>`/`<art><fanart>` blocks (v1.3.2)
+- [x] Support local filesystem image paths from NFO files (v1.3.2)
 
 ---
 
-### 1.2 Direct TMDB Lookup via NFO ID
+### 1.2 Direct TMDB Lookup via NFO ID ✅ COMPLETED
 **Priority:** High | **Complexity:** Low | **Impact:** High
 
 **Description:**
@@ -93,10 +95,10 @@ if nfo.TMDBID > 0 {
 - Better for foreign films
 
 **Tasks:**
-- [ ] Add `GetMovieByID(id int)` to TMDB client
-- [ ] Update NFO parser to use TMDB ID first
-- [ ] Add metrics tracking (ID vs search usage)
-- [ ] Handle invalid/deleted TMDB IDs
+- [x] Add `GetMovieByID(id int)` to TMDB client
+- [x] Update NFO parser to use TMDB ID first
+- [x] Add metrics tracking (ID vs search usage) — logged via structured logging as `method: "direct ID"` vs `"search"`
+- [x] Handle invalid/deleted TMDB IDs — falls back to title search on 404
 
 ---
 
@@ -321,8 +323,8 @@ traktId: 12345
 
 ---
 
-### 2.3 Local Metadata Cache
-**Priority:** Medium | **Complexity:** Low | **Impact:** High
+### 2.3 Local Metadata Cache ✅ COMPLETED
+**Priority:** Medium | **Complexity:** Low | **Impact:** High | **Implemented:** v1.3.0 (see also §6.2)
 
 **Description:**
 Cache TMDB responses locally to avoid redundant API calls during re-scans.
@@ -357,11 +359,11 @@ func (c *MetadataCache) Get(key string) (*Movie, bool) {
 - Historical metadata
 
 **Tasks:**
-- [ ] Design cache schema
-- [ ] Implement SQLite backend
-- [ ] Add cache hit/miss metrics
-- [ ] Add cache invalidation
-- [ ] Add `--clear-cache` flag
+- [x] Design cache schema
+- [x] Implement SQLite backend
+- [x] Add cache hit/miss metrics
+- [x] Add cache invalidation (TTL-based)
+- [x] Add `--clear-cache` flag
 
 ---
 
@@ -1311,7 +1313,7 @@ CREATE TABLE movie_cast (
 ---
 
 ### 6.2 Metadata Cache Database ✅ COMPLETED
-**Priority:** Medium | **Complexity:** Medium | **Impact:** High | **Implemented:** US-026
+**Priority:** Medium | **Complexity:** Medium | **Impact:** High | **Implemented:** US-026 + v1.3.0
 
 **Description:**
 Dedicated cache database for TMDB/IMDb responses.
@@ -1347,7 +1349,7 @@ CREATE INDEX idx_tmdb_title_year ON tmdb_cache(title, year);
 - [x] Create cache database schema
 - [x] Implement cache storage
 - [x] Add TTL management
-- [ ] Add cache pruning
+- [x] Add cache pruning — lazy expiry on `Get()` + `--clear-cache` for full wipe
 - [x] Add cache statistics
 
 ---
@@ -2959,12 +2961,14 @@ offline:
 | Structured Verbose Logging | US-027 | 1.3.0 |
 | Configuration Validation | US-028 | 1.3.0 |
 | Smart Retry Logic | — | 1.3.0 |
+| Local Metadata Cache (SQLite) | — | 1.3.0 |
+| Direct TMDB Lookup via NFO ID | — | 1.3.0 |
+| NFO `<art>` block parsing + local image paths | — | 1.3.2 |
 
 ### High Priority (Implement Soon)
 
 | Feature | Complexity | Impact | Justification |
 |---------|-----------|--------|---------------|
-| Direct TMDB Lookup via NFO ID | Low | High | Easy win, much more accurate |
 | Concurrent Scanning | Medium | High | 5x performance improvement |
 | Incremental Scanning | Medium | High | Essential for large libraries |
 | SQLite Library Database | Medium | High | Enables advanced features |
@@ -2976,9 +2980,11 @@ offline:
 | Feature | Complexity | Impact |
 |---------|-----------|--------|
 | IMDb Integration | Medium | High |
-| Smart Caching Strategy | Medium | Medium |
 | Custom MDX Templates | Low | Medium |
+| Collection/Franchise Support | Medium | Medium |
 | API Server | Medium | Medium |
+| Progress Bar & Better UI | Low | High |
+| Configuration Wizard | Low | Medium |
 
 ### Low Priority (Future)
 
@@ -3003,6 +3009,8 @@ Pull requests welcome!
 ---
 
 ## Changelog
+
+**2026-02-06:** Updated to v1.3.2. Full audit of roadmap vs codebase. Marked as completed: Direct TMDB Lookup via NFO ID (§1.2), Local Metadata Cache (§2.3, all tasks including `--clear-cache`), Metadata Cache Database pruning (§6.2). Added v1.3.2 NFO improvements (art block parsing, local image path support) to §1.1 tasks. Refreshed priority matrix.
 
 **2026-02-03:** Marked 8 features complete (US-013–US-028): title extraction, NFO image downloads, watch mode, duplicate detection with quality comparison, SQLite cache with statistics, structured verbose logging, retry logic, and configuration validation. Updated priority matrix.
 
