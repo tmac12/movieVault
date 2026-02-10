@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/marco/movieVault/internal/metadata/cache"
@@ -36,6 +37,8 @@ type Client struct {
 	language       string
 	httpClient     *http.Client
 	rateDelay      time.Duration
+	rateLimiter    *time.Ticker
+	rateLimiterMu  sync.Mutex // protects rateLimiter for Close()
 	maxAttempts    int
 	initialBackoff time.Duration
 	retryLogFunc   RetryLogFunc
@@ -84,11 +87,13 @@ func NewClientWithConfig(cfg ClientConfig) *Client {
 	if cfg.CacheTTLDays <= 0 {
 		cfg.CacheTTLDays = 30
 	}
-	return &Client{
+	rateDelay := time.Duration(cfg.RateLimitDelayMs) * time.Millisecond
+
+	client := &Client{
 		apiKey:         cfg.APIKey,
 		language:       cfg.Language,
 		httpClient:     &http.Client{Timeout: 30 * time.Second},
-		rateDelay:      time.Duration(cfg.RateLimitDelayMs) * time.Millisecond,
+		rateDelay:      rateDelay,
 		maxAttempts:    cfg.MaxAttempts,
 		initialBackoff: time.Duration(cfg.InitialBackoffMs) * time.Millisecond,
 		retryLogFunc:   cfg.RetryLogFunc,
@@ -97,10 +102,45 @@ func NewClientWithConfig(cfg ClientConfig) *Client {
 		cacheLogFunc:   cfg.CacheLogFunc,
 		forceRefresh:   cfg.ForceRefresh,
 	}
+
+	if rateDelay > 0 {
+		client.rateLimiter = time.NewTicker(rateDelay)
+	}
+
+	return client
 }
 
-// doRequestWithRetry executes an HTTP GET request with retry logic
+// Close stops the rate limiter ticker. Call this when the client is no longer needed.
+func (c *Client) Close() {
+	c.rateLimiterMu.Lock()
+	defer c.rateLimiterMu.Unlock()
+	if c.rateLimiter != nil {
+		c.rateLimiter.Stop()
+		c.rateLimiter = nil
+	}
+}
+
+// waitForRateLimit blocks until the rate limiter allows the next API request.
+// Only one goroutine receives each tick, so the global request rate is capped
+// at 1/rateDelay regardless of the number of concurrent workers.
+func (c *Client) waitForRateLimit() {
+	c.rateLimiterMu.Lock()
+	rl := c.rateLimiter
+	c.rateLimiterMu.Unlock()
+	if rl != nil {
+		<-rl.C
+	}
+}
+
+// doRequestWithRetry executes an HTTP GET request with retry logic.
+// For TMDB API requests (api.themoviedb.org), the centralized rate limiter
+// is consulted before each attempt. Image CDN requests are not rate-limited.
 func (c *Client) doRequestWithRetry(requestURL string) (*http.Response, error) {
+	// Rate-limit only TMDB API calls, not image CDN downloads
+	if strings.Contains(requestURL, "api.themoviedb.org") {
+		c.waitForRateLimit()
+	}
+
 	var resp *http.Response
 	var lastErr error
 	attempt := 0
@@ -227,9 +267,6 @@ func (c *Client) SearchMovie(title string, year int) (*TMDBMovie, error) {
 		c.setToCache(cacheKey, resultData)
 	}
 
-	// Rate limiting
-	time.Sleep(c.rateDelay)
-
 	return &searchResp.Results[0], nil
 }
 
@@ -272,9 +309,6 @@ func (c *Client) GetMovieDetails(tmdbID int) (*TMDBMovieDetails, error) {
 		c.setToCache(cacheKey, resultData)
 	}
 
-	// Rate limiting
-	time.Sleep(c.rateDelay)
-
 	return &details, nil
 }
 
@@ -316,9 +350,6 @@ func (c *Client) GetMovieCredits(tmdbID int) (*TMDBCreditsResponse, error) {
 	if resultData, err := json.Marshal(credits); err == nil {
 		c.setToCache(cacheKey, resultData)
 	}
-
-	// Rate limiting
-	time.Sleep(c.rateDelay)
 
 	return &credits, nil
 }
@@ -507,9 +538,6 @@ func (c *Client) DownloadImage(imagePath string, outputPath string, imageType st
 		return fmt.Errorf("failed to write image: %w", err)
 	}
 
-	// Rate limiting
-	time.Sleep(c.rateDelay)
-
 	return nil
 }
 
@@ -552,9 +580,6 @@ func (c *Client) DownloadImageFromURL(imageURL string, outputPath string) error 
 	if _, err := io.Copy(outFile, resp.Body); err != nil {
 		return fmt.Errorf("failed to write image: %w", err)
 	}
-
-	// Rate limiting
-	time.Sleep(c.rateDelay)
 
 	return nil
 }

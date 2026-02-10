@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -35,6 +37,7 @@ var (
 	watchMode      = flag.Bool("watch", false, "Watch directories for new files and process automatically")
 	findDuplicates = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
 	detailed       = flag.Bool("detailed", false, "Show detailed quality breakdown in duplicate report (use with --find-duplicates)")
+	workers        = flag.Int("workers", 0, "Number of concurrent workers (overrides config, default: 5)")
 )
 
 func main() {
@@ -261,24 +264,57 @@ func main() {
 		CacheLogFunc:     cacheLogFunc,
 		ForceRefresh:     *forceRefresh,
 	})
+	defer tmdbClient.Close()
 
 	// Create MDX writer
 	mdxWriter := writer.NewMDXWriter(cfg.Output.MDXDir, cfg.Output.CoversDir)
 
-	// Process each file
-	successCount := 0
-	errorCount := 0
-	nfoCount := 0
-	tmdbCount := 0
-	mixedCount := 0
-	producedSlugs := make(map[string]bool) // safety net: prevent two files from writing the same slug
+	// Determine effective worker count: CLI flag > config > default(5)
+	effectiveWorkers := cfg.Scanner.ConcurrentWorkers
+	if *workers > 0 {
+		effectiveWorkers = *workers
+	}
+	slog.Info("starting concurrent processing", "workers", effectiveWorkers, "files", len(filesToProcess))
 
-	for i, file := range filesToProcess {
-		slog.Info("processing file",
-			"progress", fmt.Sprintf("%d/%d", i+1, len(filesToProcess)),
-			"filename", file.FileName,
-		)
+	// Set up context with graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigChan
+		slog.Info("received signal, shutting down gracefully", "signal", sig)
+		cancel()
+	}()
+
+	// Progress reporter
+	var processedCount int64
+	totalFiles := int64(len(filesToProcess))
+	progressDone := make(chan struct{})
+	go func() {
+		defer close(progressDone)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				current := atomic.LoadInt64(&processedCount)
+				if current > 0 && current < totalFiles {
+					slog.Info("progress", "processed", current, "total", totalFiles,
+						"percent", fmt.Sprintf("%.0f%%", float64(current)/float64(totalFiles)*100))
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	// Create SlugGuard for thread-safe slug deduplication
+	slugGuard := scanner.NewSlugGuard()
+
+	// Define per-file processing function (same logic as the former sequential loop)
+	processFn := func(ctx context.Context, file scanner.FileInfo) (string, string, error) {
 		slog.Debug("file details",
 			"title", file.Title,
 			"year", file.Year,
@@ -290,14 +326,12 @@ func main() {
 		var err error
 		var metadataSource string
 
-		// Try NFO first if enabled (US-027: verbose logging improvements)
 		var tmdbLookupMethod string
 		if cfg.Options.UseNFO {
 			nfoParser := nfo.NewParser()
 			movie, err = nfoParser.GetMovieFromNFO(file.Path)
 
 			if err != nil {
-				// NFO not found or parse error - fall back to TMDB if enabled
 				if cfg.Options.NFOFallbackTMDB {
 					slog.Debug("metadata lookup",
 						"file", file.FileName,
@@ -318,7 +352,6 @@ func main() {
 					"nfo_tmdb_id", movie.TMDBID,
 				)
 
-				// Check if NFO has TMDB ID for direct lookup
 				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
 					slog.Debug("tmdb enrichment",
 						"file", file.FileName,
@@ -327,7 +360,6 @@ func main() {
 					)
 					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
 					if tmdbErr != nil {
-						// Check if movie not found (404) - fall back to search
 						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
 							slog.Debug("tmdb enrichment",
 								"file", file.FileName,
@@ -353,7 +385,6 @@ func main() {
 						)
 					}
 				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
-					// Check for incomplete NFO data (no TMDB ID available)
 					slog.Debug("tmdb enrichment",
 						"file", file.FileName,
 						"method", "search",
@@ -377,7 +408,6 @@ func main() {
 				}
 			}
 		} else {
-			// NFO disabled, use TMDB only
 			slog.Debug("metadata lookup",
 				"file", file.FileName,
 				"nfo_status", "disabled",
@@ -388,7 +418,6 @@ func main() {
 			tmdbLookupMethod = "search"
 		}
 
-		// Log the final TMDB lookup method used (US-027)
 		if tmdbLookupMethod != "" {
 			slog.Debug("tmdb lookup completed",
 				"file", file.FileName,
@@ -397,46 +426,28 @@ func main() {
 		}
 
 		if err != nil {
-			slog.Error("failed to fetch metadata",
-				"filename", file.FileName,
-				"title", file.Title,
-				"error", err,
-			)
-			errorCount++
-			continue
+			return "", "", fmt.Errorf("failed to fetch metadata for %s: %w", file.FileName, err)
 		}
 
 		// Generate clean slug from metadata title (not from filename)
 		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
 
-		// Safety net: skip if another file already produced this slug this run
-		if producedSlugs[movie.Slug] {
+		// Thread-safe slug deduplication
+		if !slugGuard.TryClaimSlug(movie.Slug) {
 			slog.Info("skipping: slug already produced this run", "slug", movie.Slug, "file", file.FileName)
-			continue
+			return metadataSource, movie.Slug, nil
 		}
-		producedSlugs[movie.Slug] = true
 
 		// Add file information
 		movie.FilePath = file.Path
 		movie.FileName = file.FileName
 		movie.FileSize = file.Size
 
-		// Log successful metadata fetch
 		slog.Info("metadata fetched",
 			"movie", movie.Title,
 			"year", movie.ReleaseYear,
 			"source", metadataSource,
 		)
-
-		// Track metadata sources for summary
-		switch metadataSource {
-		case "NFO":
-			nfoCount++
-		case "TMDB":
-			tmdbCount++
-		case "NFO+TMDB":
-			mixedCount++
-		}
 
 		slog.Debug("movie details",
 			"tmdb_id", movie.TMDBID,
@@ -444,7 +455,7 @@ func main() {
 			"genres", movie.Genres,
 		)
 
-		// Download cover image (US-027: improved verbose logging)
+		// Download cover image
 		if cfg.Options.DownloadCovers {
 			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
 			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
@@ -452,7 +463,6 @@ func main() {
 			coverDownloaded := false
 			coverSource := ""
 
-			// Try NFO poster URL first if enabled (US-020)
 			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
 				slog.Debug("image download attempt",
 					"file", file.FileName,
@@ -461,13 +471,13 @@ func main() {
 					"source", "NFO",
 					"url", movie.PosterURL,
 				)
-				if err := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); err != nil {
+				if dlErr := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); dlErr != nil {
 					slog.Debug("image download failed",
 						"file", file.FileName,
 						"movie", movie.Title,
 						"image_type", "cover",
 						"source", "NFO",
-						"error", err.Error(),
+						"error", dlErr.Error(),
 						"action", "fallback_to_tmdb",
 					)
 				} else {
@@ -476,7 +486,6 @@ func main() {
 				}
 			}
 
-			// Fall back to TMDB if NFO download failed or not enabled
 			if !coverDownloaded {
 				slog.Debug("image download attempt",
 					"file", file.FileName,
@@ -486,13 +495,13 @@ func main() {
 				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.PosterPath != "" {
-					if err := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); err != nil {
+					if dlErr := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); dlErr != nil {
 						slog.Warn("image download failed",
 							"file", file.FileName,
 							"movie", movie.Title,
 							"image_type", "cover",
 							"source", "TMDB",
-							"error", err,
+							"error", dlErr,
 						)
 					} else {
 						coverDownloaded = true
@@ -519,7 +528,7 @@ func main() {
 			}
 		}
 
-		// Download backdrop image (US-027: improved verbose logging)
+		// Download backdrop image
 		if cfg.Options.DownloadBackdrops {
 			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
 			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
@@ -527,7 +536,6 @@ func main() {
 			backdropDownloaded := false
 			backdropSource := ""
 
-			// Try NFO backdrop URL first if enabled (US-020)
 			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
 				slog.Debug("image download attempt",
 					"file", file.FileName,
@@ -536,13 +544,13 @@ func main() {
 					"source", "NFO",
 					"url", movie.BackdropURL,
 				)
-				if err := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); err != nil {
+				if dlErr := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); dlErr != nil {
 					slog.Debug("image download failed",
 						"file", file.FileName,
 						"movie", movie.Title,
 						"image_type", "backdrop",
 						"source", "NFO",
-						"error", err.Error(),
+						"error", dlErr.Error(),
 						"action", "fallback_to_tmdb",
 					)
 				} else {
@@ -551,7 +559,6 @@ func main() {
 				}
 			}
 
-			// Fall back to TMDB if NFO download failed or not enabled
 			if !backdropDownloaded {
 				slog.Debug("image download attempt",
 					"file", file.FileName,
@@ -561,13 +568,13 @@ func main() {
 				)
 				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
 				if searchResult != nil && searchResult.BackdropPath != "" {
-					if err := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); err != nil {
+					if dlErr := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); dlErr != nil {
 						slog.Warn("image download failed",
 							"file", file.FileName,
 							"movie", movie.Title,
 							"image_type", "backdrop",
 							"source", "TMDB",
-							"error", err,
+							"error", dlErr,
 						)
 					} else {
 						backdropDownloaded = true
@@ -596,17 +603,47 @@ func main() {
 
 		// Write MDX file
 		if err := mdxWriter.WriteMDXFile(movie); err != nil {
-			slog.Error("failed to write mdx file",
-				"movie", movie.Title,
-				"slug", movie.Slug,
-				"error", err,
+			return metadataSource, movie.Slug, fmt.Errorf("failed to write mdx for %s: %w", movie.Title, err)
+		}
+
+		slog.Info("mdx file created", "slug", movie.Slug)
+		return metadataSource, movie.Slug, nil
+	}
+
+	// Run concurrent processing
+	results := scanner.ProcessFilesConcurrently(ctx, filesToProcess, processFn, effectiveWorkers, &processedCount)
+
+	// Stop progress reporter
+	cancel()
+	<-progressDone
+
+	// Aggregate results
+	successCount := 0
+	errorCount := 0
+	nfoCount := 0
+	tmdbCount := 0
+	mixedCount := 0
+	for _, r := range results {
+		if r.Err != nil {
+			slog.Error("failed to process file",
+				"filename", r.File.FileName,
+				"error", r.Err,
 			)
 			errorCount++
 			continue
 		}
-
-		slog.Info("mdx file created", "slug", movie.Slug)
+		// Files that were slug-duplicates (TryClaimSlug returned false) get
+		// a non-empty Slug but still succeed — they just don't produce output.
+		// We count them as successful.
 		successCount++
+		switch r.MetadataSource {
+		case "NFO":
+			nfoCount++
+		case "TMDB":
+			tmdbCount++
+		case "NFO+TMDB":
+			mixedCount++
+		}
 	}
 
 	// Print summary
@@ -648,12 +685,12 @@ func main() {
 			os.Exit(1)
 		}
 
-		// Wait for interrupt signal
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		// Wait for interrupt signal (fresh channel since scan context was cancelled)
+		watchSigChan := make(chan os.Signal, 1)
+		signal.Notify(watchSigChan, syscall.SIGINT, syscall.SIGTERM)
 
 		slog.Info("watch mode active, press Ctrl+C to stop")
-		<-sigChan
+		<-watchSigChan
 
 		slog.Info("stopping watch mode")
 		if err := watcher.Stop(); err != nil {

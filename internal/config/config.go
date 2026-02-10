@@ -27,12 +27,13 @@ type TMDBConfig struct {
 
 // ScannerConfig holds scanner settings
 type ScannerConfig struct {
-	Directories    []string `yaml:"directories"`
-	Extensions     []string `yaml:"extensions"`
-	ExcludeDirs    []string `yaml:"exclude_dirs"`
-	WatchMode      bool     `yaml:"watch_mode"`      // Enable watch mode to monitor directories for changes (default: false)
-	WatchDebounce  int      `yaml:"watch_debounce"`  // Seconds to wait after file change before processing (default: 30)
-	WatchRecursive *bool    `yaml:"watch_recursive"` // Watch subdirectories recursively (default: true, use pointer to detect nil)
+	Directories       []string `yaml:"directories"`
+	Extensions        []string `yaml:"extensions"`
+	ExcludeDirs       []string `yaml:"exclude_dirs"`
+	ConcurrentWorkers int      `yaml:"concurrent_workers"` // Number of concurrent workers for parallel scanning (default: 5)
+	WatchMode         bool     `yaml:"watch_mode"`         // Enable watch mode to monitor directories for changes (default: false)
+	WatchDebounce     int      `yaml:"watch_debounce"`     // Seconds to wait after file change before processing (default: 30)
+	WatchRecursive    *bool    `yaml:"watch_recursive"`    // Watch subdirectories recursively (default: true, use pointer to detect nil)
 }
 
 // OutputConfig holds output directory settings
@@ -123,6 +124,11 @@ func Load(path string) (*Config, error) {
 		cfg.Cache.TTLDays = 30
 	}
 
+	// Set default concurrent workers
+	if cfg.Scanner.ConcurrentWorkers == 0 {
+		cfg.Scanner.ConcurrentWorkers = 5
+	}
+
 	// Set default watch settings
 	// WatchMode defaults to false (Go zero value) - no explicit set needed
 	if cfg.Scanner.WatchDebounce == 0 {
@@ -165,6 +171,14 @@ func Load(path string) (*Config, error) {
 
 // validate performs validation on configuration options (US-028)
 func (cfg *Config) validate() error {
+	// Validate concurrent_workers is positive
+	if cfg.Scanner.ConcurrentWorkers < 1 {
+		return fmt.Errorf("scanner.concurrent_workers must be at least 1 (got %d)", cfg.Scanner.ConcurrentWorkers)
+	}
+	if cfg.Scanner.ConcurrentWorkers > 20 {
+		slog.Warn("high concurrent_workers value may cause TMDB rate limit issues", "workers", cfg.Scanner.ConcurrentWorkers)
+	}
+
 	// Validate retry.max_attempts is positive
 	if cfg.Retry.MaxAttempts <= 0 {
 		return fmt.Errorf("retry.max_attempts must be positive (got %d)", cfg.Retry.MaxAttempts)
