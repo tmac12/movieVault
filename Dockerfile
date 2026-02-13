@@ -1,6 +1,9 @@
 # Stage 1: Build Go scanner
 FROM golang:1.25-alpine AS go-builder
 
+# Install file command for binary verification
+RUN apk add --no-cache file
+
 # Build arguments for multi-platform support
 ARG TARGETOS
 ARG TARGETARCH
