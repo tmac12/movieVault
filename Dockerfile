@@ -16,7 +16,8 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
 # Build scanner binary with cross-compilation support
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -v -o scanner cmd/scanner/main.go && \
+# Note: Build entire package (./cmd/scanner) not just main.go to include scan.go and scheduler.go
+RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -v -o scanner ./cmd/scanner && \
     ls -lah scanner && \
     file scanner
 

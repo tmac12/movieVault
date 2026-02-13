@@ -20,7 +20,7 @@ MovieVault is a movie library scanner that discovers video files, fetches metada
 
 ```bash
 # Build the scanner
-go build -o scanner cmd/scanner/main.go
+go build -o scanner ./cmd/scanner
 
 # Run with default config
 ./scanner
