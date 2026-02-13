@@ -653,3 +653,22 @@ See ROADMAP.md for 60+ planned features across 12 categories.
 - `TMDB_API_KEY` - Injected into config via `${TMDB_API_KEY}`
 
 **Entry Point:** Runs scanner on startup, then nginx serves Astro build.
+
+### Multi-Platform Builds
+
+**Supported Platforms:** linux/amd64, linux/arm64
+
+**Tag Convention:** All release tags must start with `v` (e.g., `v1.4.0`, not `1.4.0`) to trigger automated GitHub Actions builds.
+
+**Build Arguments:** Dockerfile uses Docker BuildKit's automatic `TARGETOS` and `TARGETARCH` build arguments for cross-compilation. The Go builder stage sets `GOOS` and `GOARCH` environment variables to build platform-specific binaries.
+
+**Local Multi-Platform Build:**
+```bash
+# Build for both platforms
+docker buildx build --platform linux/amd64,linux/arm64 -t movievault:latest .
+
+# Build and load for local testing (single platform only)
+docker buildx build --platform linux/amd64 -t movievault:amd64 --load .
+```
+
+**Note:** The scanner binary is cross-compiled during the build, so it cannot be executed on the build host for testing. The Dockerfile uses `file` command to verify the binary architecture instead.

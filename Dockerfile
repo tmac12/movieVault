@@ -1,6 +1,10 @@
 # Stage 1: Build Go scanner
 FROM golang:1.25-alpine AS go-builder
 
+# Build arguments for multi-platform support
+ARG TARGETOS
+ARG TARGETARCH
+
 WORKDIR /build
 
 # Copy go module files
@@ -11,11 +15,10 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
-# Build scanner binary with verbose output
-RUN go build -v -o scanner cmd/scanner/main.go && \
+# Build scanner binary with cross-compilation support
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -v -o scanner cmd/scanner/main.go && \
     ls -lah scanner && \
-    file scanner && \
-    ./scanner --help || echo "Scanner binary created successfully"
+    file scanner
 
 # Stage 2: Build Astro website (we'll skip this for initial setup)
 FROM node:20-alpine AS web-builder
