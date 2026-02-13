@@ -14,9 +14,17 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  concurrent_workers: 5    # Number of concurrent workers for parallel scanning (default: 5)
+
+  # Watch mode (continuous monitoring)
   watch_mode: false        # Enable watch mode to continuously monitor directories
   watch_debounce: 30       # Seconds to wait after file change before processing
   watch_recursive: true    # Watch subdirectories recursively
+
+  # Scheduled scanning (periodic)
+  schedule_enabled: "${SCHEDULE_ENABLED:-false}"   # Enable scheduled scans
+  schedule_interval: "${SCHEDULE_INTERVAL:-60}"    # Minutes between scans
+  schedule_on_startup: true                         # Run immediately on startup
 
 output:
   mdx_dir: "/data/movies"           # Persistent storage in Docker

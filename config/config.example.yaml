@@ -13,6 +13,8 @@ scanner:
     - ".webm"
     - ".flv"
     - ".wmv"
+  # Concurrent scanning - process multiple files in parallel
+  concurrent_workers: 5    # Number of concurrent workers for parallel scanning (default: 5)
   # Watch mode settings (US-021) - monitor directories for new/changed files
   watch_mode: false        # Enable watch mode to continuously monitor directories (default: false)
   watch_debounce: 30       # Seconds to wait after file change before processing (default: 30)

@@ -27,12 +27,16 @@ type TMDBConfig struct {
 
 // ScannerConfig holds scanner settings
 type ScannerConfig struct {
-	Directories    []string `yaml:"directories"`
-	Extensions     []string `yaml:"extensions"`
-	ExcludeDirs    []string `yaml:"exclude_dirs"`
-	WatchMode      bool     `yaml:"watch_mode"`      // Enable watch mode to monitor directories for changes (default: false)
-	WatchDebounce  int      `yaml:"watch_debounce"`  // Seconds to wait after file change before processing (default: 30)
-	WatchRecursive *bool    `yaml:"watch_recursive"` // Watch subdirectories recursively (default: true, use pointer to detect nil)
+	Directories       []string `yaml:"directories"`
+	Extensions        []string `yaml:"extensions"`
+	ExcludeDirs       []string `yaml:"exclude_dirs"`
+	ConcurrentWorkers int      `yaml:"concurrent_workers"` // Number of concurrent workers for parallel scanning (default: 5)
+	WatchMode         bool     `yaml:"watch_mode"`         // Enable watch mode to monitor directories for changes (default: false)
+	WatchDebounce     int      `yaml:"watch_debounce"`     // Seconds to wait after file change before processing (default: 30)
+	WatchRecursive    *bool    `yaml:"watch_recursive"`    // Watch subdirectories recursively (default: true, use pointer to detect nil)
+	ScheduleEnabled   bool     `yaml:"schedule_enabled"`   // Enable scheduled scans (default: false)
+	ScheduleInterval  int      `yaml:"schedule_interval"`  // Minutes between scans (default: 60)
+	ScheduleOnStartup *bool    `yaml:"schedule_on_startup"` // Run on startup (default: true, use pointer to detect nil)
 }
 
 // OutputConfig holds output directory settings
@@ -123,6 +127,11 @@ func Load(path string) (*Config, error) {
 		cfg.Cache.TTLDays = 30
 	}
 
+	// Set default concurrent workers
+	if cfg.Scanner.ConcurrentWorkers == 0 {
+		cfg.Scanner.ConcurrentWorkers = 5
+	}
+
 	// Set default watch settings
 	// WatchMode defaults to false (Go zero value) - no explicit set needed
 	if cfg.Scanner.WatchDebounce == 0 {
@@ -132,6 +141,17 @@ func Load(path string) (*Config, error) {
 	if cfg.Scanner.WatchRecursive == nil {
 		defaultTrue := true
 		cfg.Scanner.WatchRecursive = &defaultTrue
+	}
+
+	// Set default schedule settings
+	// ScheduleEnabled defaults to false (Go zero value) - no explicit set needed
+	if cfg.Scanner.ScheduleInterval == 0 {
+		cfg.Scanner.ScheduleInterval = 60
+	}
+	// ScheduleOnStartup defaults to true. We use *bool to distinguish "not set" from "explicitly false".
+	if cfg.Scanner.ScheduleOnStartup == nil {
+		defaultTrue := true
+		cfg.Scanner.ScheduleOnStartup = &defaultTrue
 	}
 
 	if len(cfg.Scanner.Directories) == 0 {
@@ -165,6 +185,14 @@ func Load(path string) (*Config, error) {
 
 // validate performs validation on configuration options (US-028)
 func (cfg *Config) validate() error {
+	// Validate concurrent_workers is positive
+	if cfg.Scanner.ConcurrentWorkers < 1 {
+		return fmt.Errorf("scanner.concurrent_workers must be at least 1 (got %d)", cfg.Scanner.ConcurrentWorkers)
+	}
+	if cfg.Scanner.ConcurrentWorkers > 20 {
+		slog.Warn("high concurrent_workers value may cause TMDB rate limit issues", "workers", cfg.Scanner.ConcurrentWorkers)
+	}
+
 	// Validate retry.max_attempts is positive
 	if cfg.Retry.MaxAttempts <= 0 {
 		return fmt.Errorf("retry.max_attempts must be positive (got %d)", cfg.Retry.MaxAttempts)
@@ -207,6 +235,25 @@ func (cfg *Config) validate() error {
 	// Validate cache TTL is positive when cache is enabled
 	if cfg.Cache.Enabled && cfg.Cache.TTLDays <= 0 {
 		return fmt.Errorf("cache.ttl_days must be positive when cache is enabled (got %d)", cfg.Cache.TTLDays)
+	}
+
+	// Validate schedule settings
+	if cfg.Scanner.ScheduleEnabled {
+		if cfg.Scanner.ScheduleInterval <= 0 {
+			return fmt.Errorf("scanner.schedule_interval must be positive when schedule_enabled is true (got %d)", cfg.Scanner.ScheduleInterval)
+		}
+		if cfg.Scanner.ScheduleInterval < 5 {
+			slog.Warn("very frequent scheduled scans may cause high CPU/API usage",
+				"interval_minutes", cfg.Scanner.ScheduleInterval,
+				"suggestion", "consider using watch mode for real-time scanning or increasing interval")
+		}
+	}
+
+	// Info log if both watch and schedule are enabled (not an error, just informational)
+	if cfg.Scanner.WatchMode && cfg.Scanner.ScheduleEnabled {
+		slog.Info("both watch mode and scheduled scanning enabled",
+			"watch_mode", "immediate processing on file changes",
+			"schedule_mode", fmt.Sprintf("periodic scans every %d minutes", cfg.Scanner.ScheduleInterval))
 	}
 
 	return nil
