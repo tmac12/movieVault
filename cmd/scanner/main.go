@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,18 +26,20 @@ import (
 )
 
 var (
-	configPath     = flag.String("config", "./config/config.yaml", "Path to configuration file")
-	forceRefresh   = flag.Bool("force-refresh", false, "Re-fetch all metadata from TMDB even for existing MDX files")
-	noBuild        = flag.Bool("no-build", false, "Skip Astro build step")
-	dryRun         = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
-	verbose        = flag.Bool("verbose", false, "Show detailed logging")
-	clearCache     = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
-	cacheStats     = flag.Bool("cache-stats", false, "Show cache statistics and exit")
-	testParser     = flag.Bool("test-parser", false, "Test title extraction without running full scan")
-	watchMode      = flag.Bool("watch", false, "Watch directories for new files and process automatically")
-	findDuplicates = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
-	detailed       = flag.Bool("detailed", false, "Show detailed quality breakdown in duplicate report (use with --find-duplicates)")
-	workers        = flag.Int("workers", 0, "Number of concurrent workers (overrides config, default: 5)")
+	configPath       = flag.String("config", "./config/config.yaml", "Path to configuration file")
+	forceRefresh     = flag.Bool("force-refresh", false, "Re-fetch all metadata from TMDB even for existing MDX files")
+	noBuild          = flag.Bool("no-build", false, "Skip Astro build step")
+	dryRun           = flag.Bool("dry-run", false, "Show what would be done without actually doing it")
+	verbose          = flag.Bool("verbose", false, "Show detailed logging")
+	clearCache       = flag.Bool("clear-cache", false, "Clear the metadata cache and exit")
+	cacheStats       = flag.Bool("cache-stats", false, "Show cache statistics and exit")
+	testParser       = flag.Bool("test-parser", false, "Test title extraction without running full scan")
+	watchMode        = flag.Bool("watch", false, "Watch directories for new files and process automatically")
+	findDuplicates   = flag.Bool("find-duplicates", false, "Find duplicate movies in the library and exit")
+	detailed         = flag.Bool("detailed", false, "Show detailed quality breakdown in duplicate report (use with --find-duplicates)")
+	workers          = flag.Int("workers", 0, "Number of concurrent workers (overrides config, default: 5)")
+	scheduleEnabled  = flag.Bool("schedule", false, "Enable scheduled scanning (overrides config)")
+	scheduleInterval = flag.Int("schedule-interval", 0, "Minutes between scans (overrides config, 0 = use config)")
 )
 
 func main() {
@@ -67,13 +69,22 @@ func main() {
 	logger := slog.New(handler)
 	slog.SetDefault(logger)
 
-	startTime := time.Now()
-
 	// Load configuration
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		slog.Error("failed to load config", "path", *configPath, "error", err)
 		os.Exit(1)
+	}
+
+	// Apply CLI flag overrides
+	if *workers > 0 {
+		cfg.Scanner.ConcurrentWorkers = *workers
+	}
+	if *scheduleEnabled {
+		cfg.Scanner.ScheduleEnabled = true
+	}
+	if *scheduleInterval > 0 {
+		cfg.Scanner.ScheduleInterval = *scheduleInterval
 	}
 
 	slog.Info("configuration loaded",
@@ -154,65 +165,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Create scanner with directory exclusions
-	s := scanner.NewWithExclusions(cfg.Scanner.Extensions, cfg.Output.MDXDir, cfg.Scanner.ExcludeDirs)
-
-	// Scan all directories
-	slog.Info("scanning directories for video files", "count", len(cfg.Scanner.Directories))
-	files, err := s.ScanAll(cfg.Scanner.Directories)
-	if err != nil {
-		slog.Error("failed to scan directories", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("scan complete", "files_found", len(files))
-
-	// Filter out secondary discs (CD2+) when CD1 exists in the same directory
-	files, skippedDiscs := scanner.FilterMultiDiscDuplicates(files)
-	for _, skip := range skippedDiscs {
-		slog.Info("multi-disc: skipping secondary disc",
-			"file", skip.FileName, "disc", skip.DiscNumber, "kept", skip.KeptFile)
-	}
-
-	// Filter files based on force-refresh flag
-	var filesToProcess []scanner.FileInfo
-	if *forceRefresh {
-		filesToProcess = files
-		slog.Info("force refresh enabled", "processing_all", true)
-	} else {
-		for _, file := range files {
-			if file.ShouldScan {
-				filesToProcess = append(filesToProcess, file)
-			}
-		}
-		skippedCount := len(files) - len(filesToProcess)
-		if skippedCount > 0 {
-			slog.Info("skipping existing files", "count", skippedCount)
-		}
-	}
-
-	if len(filesToProcess) == 0 {
-		slog.Info("no new files to process")
-		return
-	}
-
-	slog.Info("processing files", "count", len(filesToProcess))
-
-	if *dryRun {
-		fmt.Println("\nDRY RUN MODE - No actual changes will be made")
-		for _, file := range filesToProcess {
-			fmt.Printf("Would process: %s\n", file.FileName)
-			fmt.Printf("  Title: %s\n", file.Title)
-			if file.Year > 0 {
-				fmt.Printf("  Year: %d\n", file.Year)
-			}
-			fmt.Printf("  Slug: %s\n", file.Slug)
-			fmt.Println()
-		}
-		return
-	}
-
-	// Initialize cache if enabled
+	// Initialize cache if enabled (needed for both initial scan and long-running modes)
 	var tmdbCache cache.Cache
 	if cfg.Cache.Enabled {
 		var err error
@@ -269,479 +222,148 @@ func main() {
 	// Create MDX writer
 	mdxWriter := writer.NewMDXWriter(cfg.Output.MDXDir, cfg.Output.CoversDir)
 
-	// Determine effective worker count: CLI flag > config > default(5)
-	effectiveWorkers := cfg.Scanner.ConcurrentWorkers
-	if *workers > 0 {
-		effectiveWorkers = *workers
-	}
-	slog.Info("starting concurrent processing", "workers", effectiveWorkers, "files", len(filesToProcess))
-
-	// Set up context with graceful shutdown
+	// Set up context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// Set up signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		sig := <-sigChan
-		slog.Info("received signal, shutting down gracefully", "signal", sig)
+		slog.Info("received shutdown signal, stopping services", "signal", sig)
 		cancel()
 	}()
 
-	// Progress reporter
-	var processedCount int64
-	totalFiles := int64(len(filesToProcess))
-	progressDone := make(chan struct{})
-	go func() {
-		defer close(progressDone)
-		ticker := time.NewTicker(2 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				current := atomic.LoadInt64(&processedCount)
-				if current > 0 && current < totalFiles {
-					slog.Info("progress", "processed", current, "total", totalFiles,
-						"percent", fmt.Sprintf("%.0f%%", float64(current)/float64(totalFiles)*100))
-				}
-			case <-ctx.Done():
-				return
+	// Run initial scan (unless both watch and schedule are enabled, in which case schedule handles it)
+	var scanResults *ScanResults
+	if !(*watchMode || cfg.Scanner.WatchMode) && !cfg.Scanner.ScheduleEnabled {
+		// Traditional mode: run scan once and exit
+		scanResults = runScan(ctx, cfg, tmdbClient, mdxWriter, *forceRefresh, *dryRun, *verbose)
+	} else if !cfg.Scanner.ScheduleEnabled {
+		// Watch mode only: run initial scan before starting watcher
+		scanResults = runScan(ctx, cfg, tmdbClient, mdxWriter, *forceRefresh, *dryRun, *verbose)
+	}
+	// If schedule is enabled (with or without watch), scheduler handles the initial scan
+
+	// Determine which long-running modes to start
+	watchEnabled := *watchMode || cfg.Scanner.WatchMode
+	scheduleEnabled := cfg.Scanner.ScheduleEnabled
+
+	// If either watch or schedule is enabled, run as daemon
+	if watchEnabled || scheduleEnabled {
+		// Use sync.WaitGroup for goroutine management
+		var wg sync.WaitGroup
+
+		// Start watch mode if enabled
+		if watchEnabled {
+			slog.Info("starting watch mode")
+
+			// Create file handler that processes files using the existing pipeline
+			fileHandler := createFileHandler(cfg, tmdbClient, mdxWriter)
+
+			// Configure watcher
+			watcherCfg := scanner.WatcherConfig{
+				Directories:   cfg.Scanner.Directories,
+				Extensions:    cfg.Scanner.Extensions,
+				MDXDir:        cfg.Output.MDXDir,
+				ExcludeDirs:   cfg.Scanner.ExcludeDirs,
+				DebounceDelay: time.Duration(cfg.Scanner.WatchDebounce) * time.Second,
+				Recursive:     *cfg.Scanner.WatchRecursive,
 			}
-		}
-	}()
 
-	// Create SlugGuard for thread-safe slug deduplication
-	slugGuard := scanner.NewSlugGuard()
-
-	// Define per-file processing function (same logic as the former sequential loop)
-	processFn := func(ctx context.Context, file scanner.FileInfo) (string, string, error) {
-		slog.Debug("file details",
-			"title", file.Title,
-			"year", file.Year,
-			"path", file.Path,
-		)
-
-		// Fetch metadata from NFO or TMDB
-		var movie *writer.Movie
-		var err error
-		var metadataSource string
-
-		var tmdbLookupMethod string
-		if cfg.Options.UseNFO {
-			nfoParser := nfo.NewParser()
-			movie, err = nfoParser.GetMovieFromNFO(file.Path)
-
+			watcher, err := scanner.NewWatcher(watcherCfg, fileHandler)
 			if err != nil {
-				if cfg.Options.NFOFallbackTMDB {
-					slog.Debug("metadata lookup",
-						"file", file.FileName,
-						"nfo_status", "not_found_or_error",
-						"nfo_error", err.Error(),
-						"action", "fallback_to_tmdb",
-					)
-					movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
-					metadataSource = "TMDB"
-					tmdbLookupMethod = "search"
-				}
-			} else {
-				metadataSource = "NFO"
-				slog.Debug("metadata lookup",
-					"file", file.FileName,
-					"nfo_status", "found",
-					"nfo_title", movie.Title,
-					"nfo_tmdb_id", movie.TMDBID,
-				)
-
-				if movie.TMDBID > 0 && cfg.Options.NFOFallbackTMDB {
-					slog.Debug("tmdb enrichment",
-						"file", file.FileName,
-						"method", "direct_id_lookup",
-						"tmdb_id", movie.TMDBID,
-					)
-					tmdbMovie, tmdbErr := tmdbClient.GetMovieByID(movie.TMDBID)
-					if tmdbErr != nil {
-						if errors.Is(tmdbErr, metadata.ErrMovieNotFound) {
-							slog.Debug("tmdb enrichment",
-								"file", file.FileName,
-								"method", "search_fallback",
-								"reason", "direct_id_not_found",
-								"tmdb_id", movie.TMDBID,
-								"search_title", file.Title,
-								"search_year", file.Year,
-							)
-							tmdbMovie, tmdbErr = tmdbClient.GetFullMovieData(file.Title, file.Year)
-							tmdbLookupMethod = "search (fallback from direct)"
-						}
-					} else {
-						tmdbLookupMethod = "direct ID"
-					}
-					if tmdbErr == nil && tmdbMovie != nil {
-						movie = mergeMovieData(movie, tmdbMovie)
-						metadataSource = "NFO+TMDB"
-						slog.Debug("metadata merge",
-							"file", file.FileName,
-							"nfo_fields_kept", "title,year,rating,genres,director,cast",
-							"tmdb_fields_filled", "missing_fields_only",
-						)
-					}
-				} else if cfg.Options.NFOFallbackTMDB && (movie.Title == "" || movie.ReleaseYear == 0) {
-					slog.Debug("tmdb enrichment",
-						"file", file.FileName,
-						"method", "search",
-						"reason", "nfo_incomplete",
-						"missing_title", movie.Title == "",
-						"missing_year", movie.ReleaseYear == 0,
-						"search_title", file.Title,
-						"search_year", file.Year,
-					)
-					tmdbMovie, tmdbErr := tmdbClient.GetFullMovieData(file.Title, file.Year)
-					tmdbLookupMethod = "search"
-					if tmdbErr == nil && tmdbMovie != nil {
-						movie = mergeMovieData(movie, tmdbMovie)
-						metadataSource = "NFO+TMDB"
-						slog.Debug("metadata merge",
-							"file", file.FileName,
-							"nfo_fields_kept", "available_nfo_data",
-							"tmdb_fields_filled", "missing_fields",
-						)
-					}
-				}
+				slog.Error("failed to create file watcher", "error", err)
+				os.Exit(1)
 			}
+
+			// Start watching
+			if err := watcher.Start(); err != nil {
+				slog.Error("failed to start file watcher", "error", err)
+				os.Exit(1)
+			}
+
+			slog.Info("watch mode active")
+
+			// Watch mode runs in main goroutine, will exit when context is cancelled
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-ctx.Done()
+				slog.Info("stopping watch mode")
+				if err := watcher.Stop(); err != nil {
+					slog.Error("error stopping watcher", "error", err)
+				}
+			}()
+		}
+
+		// Start scheduler if enabled
+		if scheduleEnabled {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				startScheduler(ctx, cfg, tmdbClient, mdxWriter, *verbose)
+			}()
+		}
+
+		// Log active modes
+		if watchEnabled && scheduleEnabled {
+			slog.Info("daemon mode active: watch + schedule",
+				"watch_debounce_sec", cfg.Scanner.WatchDebounce,
+				"schedule_interval_min", cfg.Scanner.ScheduleInterval)
+		} else if watchEnabled {
+			slog.Info("daemon mode active: watch only", "debounce_sec", cfg.Scanner.WatchDebounce)
 		} else {
-			slog.Debug("metadata lookup",
-				"file", file.FileName,
-				"nfo_status", "disabled",
-				"action", "tmdb_search",
-			)
-			movie, err = tmdbClient.GetFullMovieData(file.Title, file.Year)
-			metadataSource = "TMDB"
-			tmdbLookupMethod = "search"
+			slog.Info("daemon mode active: schedule only", "interval_min", cfg.Scanner.ScheduleInterval)
 		}
 
-		if tmdbLookupMethod != "" {
-			slog.Debug("tmdb lookup completed",
-				"file", file.FileName,
-				"lookup_method", tmdbLookupMethod,
-			)
-		}
+		slog.Info("press Ctrl+C to stop")
 
-		if err != nil {
-			return "", "", fmt.Errorf("failed to fetch metadata for %s: %w", file.FileName, err)
-		}
+		// Wait for shutdown signal
+		<-ctx.Done()
 
-		// Generate clean slug from metadata title (not from filename)
-		movie.Slug = scanner.GenerateSlug(movie.Title, movie.ReleaseYear)
+		// Wait for all goroutines to finish
+		slog.Info("waiting for services to stop")
+		wg.Wait()
 
-		// Thread-safe slug deduplication
-		if !slugGuard.TryClaimSlug(movie.Slug) {
-			slog.Info("skipping: slug already produced this run", "slug", movie.Slug, "file", file.FileName)
-			return metadataSource, movie.Slug, nil
-		}
-
-		// Add file information
-		movie.FilePath = file.Path
-		movie.FileName = file.FileName
-		movie.FileSize = file.Size
-
-		slog.Info("metadata fetched",
-			"movie", movie.Title,
-			"year", movie.ReleaseYear,
-			"source", metadataSource,
-		)
-
-		slog.Debug("movie details",
-			"tmdb_id", movie.TMDBID,
-			"rating", movie.Rating,
-			"genres", movie.Genres,
-		)
-
-		// Download cover image
-		if cfg.Options.DownloadCovers {
-			coverPath := mdxWriter.GetAbsoluteCoverPath(movie.Slug)
-			movie.CoverImage = mdxWriter.GetCoverPath(movie.Slug)
-
-			coverDownloaded := false
-			coverSource := ""
-
-			if cfg.Options.NFODownloadImages && movie.PosterURL != "" {
-				slog.Debug("image download attempt",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "cover",
-					"source", "NFO",
-					"url", movie.PosterURL,
-				)
-				if dlErr := tmdbClient.DownloadImageFromURL(movie.PosterURL, coverPath); dlErr != nil {
-					slog.Debug("image download failed",
-						"file", file.FileName,
-						"movie", movie.Title,
-						"image_type", "cover",
-						"source", "NFO",
-						"error", dlErr.Error(),
-						"action", "fallback_to_tmdb",
-					)
-				} else {
-					coverDownloaded = true
-					coverSource = "NFO"
-				}
-			}
-
-			if !coverDownloaded {
-				slog.Debug("image download attempt",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "cover",
-					"source", "TMDB",
-				)
-				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-				if searchResult != nil && searchResult.PosterPath != "" {
-					if dlErr := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); dlErr != nil {
-						slog.Warn("image download failed",
-							"file", file.FileName,
-							"movie", movie.Title,
-							"image_type", "cover",
-							"source", "TMDB",
-							"error", dlErr,
-						)
-					} else {
-						coverDownloaded = true
-						coverSource = "TMDB"
-					}
-				} else {
-					slog.Debug("image not available",
-						"file", file.FileName,
-						"movie", movie.Title,
-						"image_type", "cover",
-						"reason", "no_poster_path_in_tmdb",
-					)
-				}
-			}
-
-			if coverDownloaded {
-				slog.Debug("image download success",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "cover",
-					"source", coverSource,
-					"path", coverPath,
-				)
-			}
-		}
-
-		// Download backdrop image
-		if cfg.Options.DownloadBackdrops {
-			backdropPath := mdxWriter.GetAbsoluteBackdropPath(movie.Slug)
-			movie.BackdropImage = mdxWriter.GetBackdropPath(movie.Slug)
-
-			backdropDownloaded := false
-			backdropSource := ""
-
-			if cfg.Options.NFODownloadImages && movie.BackdropURL != "" {
-				slog.Debug("image download attempt",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "backdrop",
-					"source", "NFO",
-					"url", movie.BackdropURL,
-				)
-				if dlErr := tmdbClient.DownloadImageFromURL(movie.BackdropURL, backdropPath); dlErr != nil {
-					slog.Debug("image download failed",
-						"file", file.FileName,
-						"movie", movie.Title,
-						"image_type", "backdrop",
-						"source", "NFO",
-						"error", dlErr.Error(),
-						"action", "fallback_to_tmdb",
-					)
-				} else {
-					backdropDownloaded = true
-					backdropSource = "NFO"
-				}
-			}
-
-			if !backdropDownloaded {
-				slog.Debug("image download attempt",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "backdrop",
-					"source", "TMDB",
-				)
-				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-				if searchResult != nil && searchResult.BackdropPath != "" {
-					if dlErr := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); dlErr != nil {
-						slog.Warn("image download failed",
-							"file", file.FileName,
-							"movie", movie.Title,
-							"image_type", "backdrop",
-							"source", "TMDB",
-							"error", dlErr,
-						)
-					} else {
-						backdropDownloaded = true
-						backdropSource = "TMDB"
-					}
-				} else {
-					slog.Debug("image not available",
-						"file", file.FileName,
-						"movie", movie.Title,
-						"image_type", "backdrop",
-						"reason", "no_backdrop_path_in_tmdb",
-					)
-				}
-			}
-
-			if backdropDownloaded {
-				slog.Debug("image download success",
-					"file", file.FileName,
-					"movie", movie.Title,
-					"image_type", "backdrop",
-					"source", backdropSource,
-					"path", backdropPath,
-				)
-			}
-		}
-
-		// Write MDX file
-		if err := mdxWriter.WriteMDXFile(movie); err != nil {
-			return metadataSource, movie.Slug, fmt.Errorf("failed to write mdx for %s: %w", movie.Title, err)
-		}
-
-		slog.Info("mdx file created", "slug", movie.Slug)
-		return metadataSource, movie.Slug, nil
-	}
-
-	// Run concurrent processing
-	results := scanner.ProcessFilesConcurrently(ctx, filesToProcess, processFn, effectiveWorkers, &processedCount)
-
-	// Stop progress reporter
-	cancel()
-	<-progressDone
-
-	// Aggregate results
-	successCount := 0
-	errorCount := 0
-	nfoCount := 0
-	tmdbCount := 0
-	mixedCount := 0
-	for _, r := range results {
-		if r.Err != nil {
-			slog.Error("failed to process file",
-				"filename", r.File.FileName,
-				"error", r.Err,
-			)
-			errorCount++
-			continue
-		}
-		// Files that were slug-duplicates (TryClaimSlug returned false) get
-		// a non-empty Slug but still succeed — they just don't produce output.
-		// We count them as successful.
-		successCount++
-		switch r.MetadataSource {
-		case "NFO":
-			nfoCount++
-		case "TMDB":
-			tmdbCount++
-		case "NFO+TMDB":
-			mixedCount++
-		}
-	}
-
-	// Print summary
-	duration := time.Since(startTime)
-	slog.Info("scan complete",
-		"total_files", len(files),
-		"processed", len(filesToProcess),
-		"successful", successCount,
-		"errors", errorCount,
-		"duration_sec", duration.Seconds(),
-	)
-
-	// Start watch mode if enabled (US-022)
-	if *watchMode || cfg.Scanner.WatchMode {
-		slog.Info("starting watch mode")
-
-		// Create file handler that processes files using the existing pipeline
-		fileHandler := createFileHandler(cfg, tmdbClient, mdxWriter)
-
-		// Configure watcher
-		watcherCfg := scanner.WatcherConfig{
-			Directories:   cfg.Scanner.Directories,
-			Extensions:    cfg.Scanner.Extensions,
-			MDXDir:        cfg.Output.MDXDir,
-			ExcludeDirs:   cfg.Scanner.ExcludeDirs,
-			DebounceDelay: time.Duration(cfg.Scanner.WatchDebounce) * time.Second,
-			Recursive:     *cfg.Scanner.WatchRecursive,
-		}
-
-		watcher, err := scanner.NewWatcher(watcherCfg, fileHandler)
-		if err != nil {
-			slog.Error("failed to create file watcher", "error", err)
-			os.Exit(1)
-		}
-
-		// Start watching
-		if err := watcher.Start(); err != nil {
-			slog.Error("failed to start file watcher", "error", err)
-			os.Exit(1)
-		}
-
-		// Wait for interrupt signal (fresh channel since scan context was cancelled)
-		watchSigChan := make(chan os.Signal, 1)
-		signal.Notify(watchSigChan, syscall.SIGINT, syscall.SIGTERM)
-
-		slog.Info("watch mode active, press Ctrl+C to stop")
-		<-watchSigChan
-
-		slog.Info("stopping watch mode")
-		if err := watcher.Stop(); err != nil {
-			slog.Error("error stopping watcher", "error", err)
-		}
-
+		slog.Info("all services stopped, exiting")
 		return
 	}
 
-	// Show metadata source breakdown
-	if successCount > 0 {
-		slog.Info("metadata sources",
-			"nfo_count", nfoCount,
-			"nfo_percent", fmt.Sprintf("%.0f%%", float64(nfoCount)/float64(successCount)*100),
-			"tmdb_count", tmdbCount,
-			"tmdb_percent", fmt.Sprintf("%.0f%%", float64(tmdbCount)/float64(successCount)*100),
-			"mixed_count", mixedCount,
-			"mixed_percent", fmt.Sprintf("%.0f%%", float64(mixedCount)/float64(successCount)*100),
-		)
-	}
-
-	// Display cache statistics at end of scan (US-026)
-	if tmdbCache != nil {
-		stats, err := tmdbCache.Stats()
-		if err == nil {
-			slog.Info("cache statistics",
-				"hits", stats.Hits,
-				"misses", stats.Misses,
-				"hit_rate", fmt.Sprintf("%.1f%%", stats.HitRate()),
-				"entry_count", stats.EntryCount,
-			)
+	// Traditional one-shot mode: show results and build
+	if scanResults != nil {
+		// Display cache statistics
+		if tmdbCache != nil {
+			stats, err := tmdbCache.Stats()
+			if err == nil {
+				slog.Info("cache statistics",
+					"hits", stats.Hits,
+					"misses", stats.Misses,
+					"hit_rate", fmt.Sprintf("%.1f%%", stats.HitRate()),
+					"entry_count", stats.EntryCount,
+				)
+			}
 		}
-	}
 
-	// Build Astro site if enabled and not disabled via flag
-	if cfg.Output.AutoBuild && !*noBuild && successCount > 0 {
-		slog.Info("building astro website")
-		websiteDir := cfg.Output.WebsiteDir
-		if websiteDir == "" {
-			websiteDir = "./website"
+		// Build Astro site if enabled and not disabled via flag
+		if cfg.Output.AutoBuild && !*noBuild && scanResults.SuccessCount > 0 {
+			slog.Info("building astro website")
+			websiteDir := cfg.Output.WebsiteDir
+			if websiteDir == "" {
+				websiteDir = "./website"
+			}
+			if err := buildAstroSite(websiteDir); err != nil {
+				slog.Error("failed to build astro site", "error", err, "website_dir", websiteDir)
+				slog.Info("manual build command", "command", fmt.Sprintf("cd %s && npm run build", websiteDir))
+			} else {
+				slog.Info("astro site built successfully")
+			}
 		}
-		if err := buildAstroSite(websiteDir); err != nil {
-			slog.Error("failed to build astro site", "error", err, "website_dir", websiteDir)
-			slog.Info("manual build command", "command", fmt.Sprintf("cd %s && npm run build", websiteDir))
-		} else {
-			slog.Info("astro site built successfully")
-		}
-	}
 
-	if errorCount > 0 {
-		os.Exit(1)
+		if scanResults.ErrorCount > 0 {
+			os.Exit(1)
+		}
 	}
 }
 

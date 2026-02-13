@@ -28,6 +28,9 @@ services:
       - ./config/config.docker.yaml:/config/config.yaml:ro
     environment:
       - TMDB_API_KEY=${TMDB_API_KEY}
+      - SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-false}
+      - SCHEDULE_INTERVAL=${SCHEDULE_INTERVAL:-60}
+      # Legacy variables (for backward compatibility)
       - AUTO_SCAN=${AUTO_SCAN:-true}
       - SCAN_INTERVAL=${SCAN_INTERVAL:-3600}
     healthcheck:

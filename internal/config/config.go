@@ -34,6 +34,9 @@ type ScannerConfig struct {
 	WatchMode         bool     `yaml:"watch_mode"`         // Enable watch mode to monitor directories for changes (default: false)
 	WatchDebounce     int      `yaml:"watch_debounce"`     // Seconds to wait after file change before processing (default: 30)
 	WatchRecursive    *bool    `yaml:"watch_recursive"`    // Watch subdirectories recursively (default: true, use pointer to detect nil)
+	ScheduleEnabled   bool     `yaml:"schedule_enabled"`   // Enable scheduled scans (default: false)
+	ScheduleInterval  int      `yaml:"schedule_interval"`  // Minutes between scans (default: 60)
+	ScheduleOnStartup *bool    `yaml:"schedule_on_startup"` // Run on startup (default: true, use pointer to detect nil)
 }
 
 // OutputConfig holds output directory settings
@@ -140,6 +143,17 @@ func Load(path string) (*Config, error) {
 		cfg.Scanner.WatchRecursive = &defaultTrue
 	}
 
+	// Set default schedule settings
+	// ScheduleEnabled defaults to false (Go zero value) - no explicit set needed
+	if cfg.Scanner.ScheduleInterval == 0 {
+		cfg.Scanner.ScheduleInterval = 60
+	}
+	// ScheduleOnStartup defaults to true. We use *bool to distinguish "not set" from "explicitly false".
+	if cfg.Scanner.ScheduleOnStartup == nil {
+		defaultTrue := true
+		cfg.Scanner.ScheduleOnStartup = &defaultTrue
+	}
+
 	if len(cfg.Scanner.Directories) == 0 {
 		return nil, fmt.Errorf("at least one scan directory is required")
 	}
@@ -221,6 +235,25 @@ func (cfg *Config) validate() error {
 	// Validate cache TTL is positive when cache is enabled
 	if cfg.Cache.Enabled && cfg.Cache.TTLDays <= 0 {
 		return fmt.Errorf("cache.ttl_days must be positive when cache is enabled (got %d)", cfg.Cache.TTLDays)
+	}
+
+	// Validate schedule settings
+	if cfg.Scanner.ScheduleEnabled {
+		if cfg.Scanner.ScheduleInterval <= 0 {
+			return fmt.Errorf("scanner.schedule_interval must be positive when schedule_enabled is true (got %d)", cfg.Scanner.ScheduleInterval)
+		}
+		if cfg.Scanner.ScheduleInterval < 5 {
+			slog.Warn("very frequent scheduled scans may cause high CPU/API usage",
+				"interval_minutes", cfg.Scanner.ScheduleInterval,
+				"suggestion", "consider using watch mode for real-time scanning or increasing interval")
+		}
+	}
+
+	// Info log if both watch and schedule are enabled (not an error, just informational)
+	if cfg.Scanner.WatchMode && cfg.Scanner.ScheduleEnabled {
+		slog.Info("both watch mode and scheduled scanning enabled",
+			"watch_mode", "immediate processing on file changes",
+			"schedule_mode", fmt.Sprintf("periodic scans every %d minutes", cfg.Scanner.ScheduleInterval))
 	}
 
 	return nil

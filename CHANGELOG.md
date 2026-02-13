@@ -4,6 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.4.0] - 2026-02-13
+
+### Added
+
+- **Concurrent file processing:** Worker pool architecture for parallel scanning with configurable concurrency. New config option: `scanner.concurrent_workers` (default: 5, range: 1-20). New CLI flag: `--workers N` to override config. Delivers ~5x performance improvement for large libraries.
+- **Thread-safe slug deduplication:** `SlugGuard` mechanism prevents slug collisions when multiple workers process files with identical title+year combinations. First worker to claim a slug wins; subsequent duplicates are skipped.
+- **Atomic progress tracking:** Worker pool reports real-time progress via atomic counters, enabling accurate status updates during concurrent operations.
+- **Context-aware cancellation:** Workers respect context cancellation (SIGINT/SIGTERM), ensuring graceful shutdown mid-scan without orphaned goroutines.
+- **Scheduled scanning:** Interval-based periodic scanning at configurable intervals. Scanner runs continuously, triggering scans every N minutes. Optionally runs immediately on startup (default: true). New config keys: `scanner.schedule_enabled` (default: false), `scanner.schedule_interval` (default: 60 minutes), `scanner.schedule_on_startup` (default: true). New CLI flags: `--schedule`, `--schedule-interval N`.
+- **Overlap prevention:** Atomic lock-free mechanism prevents concurrent scheduled scans from overlapping. If a scan exceeds the interval, subsequent triggers are skipped with warnings suggesting interval adjustment.
+- **Docker scheduled mode:** Native support for scheduled scanning in Docker deployments via environment variables. Set `SCHEDULE_ENABLED=true` and `SCHEDULE_INTERVAL=60` (minutes) in `.env`. Scanner runs as background service alongside nginx.
+- **Coexistence with watch mode:** Watch mode and scheduled scanning can run simultaneously (watch = immediate, schedule = periodic validation). Managed via `sync.WaitGroup` with shared context for graceful shutdown.
+- **Scan extraction:** Core scan logic extracted into reusable `runScan()` function in `cmd/scanner/scan.go`. Enables consistent behavior across manual scans, scheduled scans, and future enhancements. Returns `ScanResults` struct with counts, duration, and errors.
+
+### New files
+
+- `internal/scanner/pool.go` — Worker pool implementation with `ProcessFilesConcurrently` and `SlugGuard`
+- `internal/scanner/pool_test.go` — Comprehensive test suite (8 tests covering concurrency, slug guard, cancellation, edge cases)
+- `cmd/scanner/scan.go` — Extracted scan logic with `runScan()` function and `ScanResults` struct (~250 lines)
+- `cmd/scanner/scheduler.go` — Scheduler implementation with `startScheduler()` and overlap prevention (~90 lines)
+
+### Changed
+
+- **Scanner architecture:** Refactored main scan loop in `cmd/scanner/main.go` to use worker pool when `concurrent_workers > 1`. Sequential processing still available as fallback.
+- **Config validation:** Added validation for `scanner.concurrent_workers` with warnings for values > 20 (potential TMDB rate limit issues).
+- **Main loop refactoring:** `cmd/scanner/main.go` simplified to use extracted `runScan()` function. Goroutine management added for watch and schedule modes with unified signal handling.
+- **Config validation:** Added validation for schedule settings with warnings for intervals < 5 minutes (high CPU/API usage). Info log when both watch and schedule are enabled.
+- **Docker entrypoint:** Updated `docker/entrypoint.sh` to detect `SCHEDULE_ENABLED` and run scanner in background mode. Backward compatible with legacy `AUTO_SCAN` variable.
+- **Environment variables:** Added `SCHEDULE_ENABLED` and `SCHEDULE_INTERVAL` to `.env` and `docker-compose.yml`. Legacy `AUTO_SCAN` and `SCAN_INTERVAL` remain for backward compatibility.
+
+### Technical details
+
+- **Thread safety:** Scheduler uses `atomic.Bool` with `CompareAndSwap` for lock-free overlap detection. All existing components (worker pool, TMDB client, cache, MDX writer) are already thread-safe.
+- **Incremental scans:** Scheduled scans process only new files (skip existing MDX). Users can manually run `--force-refresh` for full rescans.
+- **Graceful shutdown:** Context cancellation propagates to both watch and schedule goroutines. Signal handling ensures clean exit with WaitGroup synchronization.
+
+---
+
 ## [1.3.2] - 2026-02-05
 
 ### Fixed

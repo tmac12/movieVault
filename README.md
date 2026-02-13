@@ -13,10 +13,12 @@ A multimedia file scanner that discovers movie files, scrapes metadata from TMDB
 - ⚡ Smart scanning - only processes new files (existing movies are skipped)
 - 📄 Jellyfin NFO file support with TMDB fallback and NFO image downloads
 - 👀 Watch mode - automatically scan when new files are added
+- ⏰ Scheduled scanning - periodic scans at configurable intervals
 - 🔁 Duplicate detection with quality comparison and recommendations
 - 💾 SQLite cache for TMDB API responses with hit/miss statistics
 - 🖼️ Automatic cover and backdrop image downloads
 - 📱 Fully responsive design with dark theme
+- 🚀 Concurrent file processing with configurable worker pool (5x faster)
 
 ## Tech Stack
 
@@ -72,8 +74,8 @@ docker run -d \
   -v ~/movievault-data/movies:/data/movies \
   -v ~/movievault-data/covers:/data/covers \
   -e TMDB_API_KEY=your_tmdb_api_key_here \
-  -e AUTO_SCAN=true \
-  -e SCAN_INTERVAL=3600 \
+  -e SCHEDULE_ENABLED=true \
+  -e SCHEDULE_INTERVAL=60 \
   ghcr.io/tmac12/movievault:latest
 ```
 
@@ -87,8 +89,8 @@ http://localhost:8080
 - `-v ~/movievault-data/movies:/data/movies` - Stores generated MDX files
 - `-v ~/movievault-data/covers:/data/covers` - Stores downloaded images
 - `-e TMDB_API_KEY=...` - Your TMDB API key (required)
-- `-e AUTO_SCAN=true` - Automatically scan on startup
-- `-e SCAN_INTERVAL=3600` - Re-scan every hour (optional)
+- `-e SCHEDULE_ENABLED=true` - Enable scheduled periodic scans (new in v1.4.0)
+- `-e SCHEDULE_INTERVAL=60` - Scan every 60 minutes (default: 60)
 
 ### Option 2: Minimal docker-compose.yml
 
@@ -97,8 +99,8 @@ http://localhost:8080
 **1. Create `.env` file:**
 ```env
 TMDB_API_KEY=your_actual_api_key_here
-AUTO_SCAN=true
-SCAN_INTERVAL=3600
+SCHEDULE_ENABLED=true      # Enable scheduled periodic scans (new in v1.4.0)
+SCHEDULE_INTERVAL=60       # Scan every 60 minutes (default: 60)
 WEB_PORT=8080
 ```
 
@@ -120,8 +122,8 @@ services:
       - ./data/covers:/data/covers
     environment:
       - TMDB_API_KEY=${TMDB_API_KEY}
-      - AUTO_SCAN=${AUTO_SCAN:-true}
-      - SCAN_INTERVAL=${SCAN_INTERVAL:-3600}
+      - SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-false}
+      - SCHEDULE_INTERVAL=${SCHEDULE_INTERVAL:-60}
     restart: unless-stopped
 ```
 
@@ -204,6 +206,15 @@ docker stop movievault
 docker rm movievault
 # Then run the docker run command again
 ```
+
+**Scheduled Scanning in Docker:**
+
+When `SCHEDULE_ENABLED=true`, the scanner runs continuously in the background, performing periodic scans every `SCHEDULE_INTERVAL` minutes. This is ideal for Docker deployments as it eliminates the need for external cron jobs or manual scans. The scanner will:
+- Run an initial scan on startup (configurable via `schedule_on_startup`)
+- Continue scanning at the configured interval
+- Process only new files (incremental scans)
+- Automatically rebuild the Astro site after each scan (if `auto_build` is enabled)
+- Run alongside the nginx web server in the same container
 
 ### Get Your TMDB API Key
 
@@ -379,6 +390,16 @@ http://localhost:4321
 # Watch mode - continuously monitor directories for new files
 ./scanner --watch
 
+# Scheduled scanning - periodic scans every N minutes
+./scanner --schedule --schedule-interval 30  # Scan every 30 minutes
+./scanner --schedule                         # Use config defaults (60 min)
+
+# Combined modes - watch + schedule together
+./scanner --watch --schedule
+
+# Concurrent processing - override number of workers
+./scanner --workers 10  # Use 10 concurrent workers (default: 5)
+
 # Test title extraction without running a full scan
 ./scanner --test-parser "Movie.Name.2020.1080p.BluRay.mkv"
 
@@ -435,6 +456,7 @@ movieVault/
 
 - `directories`: Array of paths to scan for movie files
 - `extensions`: Supported video file extensions
+- `concurrent_workers`: Number of concurrent workers for parallel scanning (default: `5`, range: 1-20)
 
 ### Output Settings
 
@@ -448,6 +470,14 @@ movieVault/
 - `watch_mode`: Enable continuous directory monitoring (`false` by default)
 - `watch_debounce`: Seconds to wait after a file change before processing (default: `30`)
 - `watch_recursive`: Watch subdirectories recursively (default: `true`)
+
+### Scheduled Scanning Settings
+
+- `schedule_enabled`: Enable scheduled periodic scans (`false` by default)
+- `schedule_interval`: Minutes between scans (default: `60`)
+- `schedule_on_startup`: Run immediately on startup (default: `true`)
+
+**Note:** Watch mode and scheduled scanning can run simultaneously (watch = immediate, schedule = periodic validation)
 
 ### Options
 
@@ -537,9 +567,28 @@ server {
 }
 ```
 
-### Automated Scanning (Cron)
+### Automated Scanning
 
-Add to crontab:
+**Option 1: Built-in Scheduled Scanning (Recommended)**
+
+Use the built-in scheduler for continuous operation:
+
+```bash
+# Run scanner with scheduled scans every hour
+./scanner --schedule --schedule-interval 60
+```
+
+Or configure in `config.yaml`:
+```yaml
+scanner:
+  schedule_enabled: true
+  schedule_interval: 60    # Minutes
+  schedule_on_startup: true
+```
+
+**Option 2: Cron (Traditional)**
+
+Add to crontab for periodic one-shot scans:
 
 ```cron
 # Run scanner daily at 3 AM

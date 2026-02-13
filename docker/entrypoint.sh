@@ -5,9 +5,18 @@ echo "========================================="
 echo "Starting MovieVault Container"
 echo "========================================="
 
-# Run initial scan if AUTO_SCAN is enabled
-if [ "$AUTO_SCAN" = "true" ]; then
-  echo "AUTO_SCAN enabled, running initial movie scan..."
+# Check if scheduled scanning is enabled (new mode in v1.5.0)
+if [ "$SCHEDULE_ENABLED" = "true" ]; then
+  echo "SCHEDULE_ENABLED=true, starting scanner in background (runs continuously)..."
+  # Scanner will run continuously with scheduled scans every $SCHEDULE_INTERVAL minutes
+  # It will perform an initial scan on startup if schedule_on_startup is true (default)
+  /usr/local/bin/scanner --config /config/config.yaml &
+  SCANNER_PID=$!
+  echo "Scanner started in background (PID: $SCANNER_PID)"
+  echo "Scheduled scans will run every ${SCHEDULE_INTERVAL:-60} minutes"
+elif [ "$AUTO_SCAN" = "true" ]; then
+  # Legacy mode: run scan once on startup, then exit
+  echo "AUTO_SCAN enabled (legacy mode), running one-time movie scan..."
   if ! /usr/local/bin/scanner --config /config/config.yaml; then
     echo "ERROR: Scanner failed. Container will continue but data may be stale."
     >&2 echo "Scanner failed at $(date)"
