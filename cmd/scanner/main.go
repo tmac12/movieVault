@@ -463,17 +463,35 @@ func syncBuildToNginx(websiteDir string) error {
 				slog.Warn("failed to copy file", "file", entry.Name(), "error", err)
 				continue
 			}
+			// Set file permissions explicitly
+			if err := os.Chmod(dest, 0644); err != nil {
+				slog.Warn("failed to set file permissions", "file", entry.Name(), "error", err)
+			}
 		}
 		copiedCount++
 	}
 
+	// Verify index.html exists and is readable
+	indexPath := filepath.Join(nginxDir, "index.html")
+	if _, err := os.Stat(indexPath); os.IsNotExist(err) {
+		slog.Error("index.html not found after sync", "path", indexPath)
+		return fmt.Errorf("index.html missing in nginx directory")
+	}
+
 	slog.Info("astro build synced to nginx", "items_copied", copiedCount)
+
+	// Reload nginx to pick up new files (CRITICAL FIX)
+	if err := reloadNginx(); err != nil {
+		slog.Error("failed to reload nginx", "error", err)
+		return fmt.Errorf("nginx reload failed: %w", err)
+	}
+
 	return nil
 }
 
 // copyDir recursively copies a directory
 func copyDir(src, dest string) error {
-	// Create destination directory
+	// Create destination directory with explicit permissions
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
@@ -496,6 +514,10 @@ func copyDir(src, dest string) error {
 		} else {
 			if err := copyFile(srcPath, destPath); err != nil {
 				return err
+			}
+			// Set file permissions after copy
+			if err := os.Chmod(destPath, 0644); err != nil {
+				slog.Warn("failed to set file permissions", "file", entry.Name(), "error", err)
 			}
 		}
 	}
@@ -598,6 +620,20 @@ func copyFile(src, dest string) error {
 	}
 
 	return destFile.Sync()
+}
+
+// reloadNginx sends a reload signal to nginx
+func reloadNginx() error {
+	slog.Info("reloading nginx to serve updated content")
+
+	cmd := exec.Command("nginx", "-s", "reload")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("nginx reload command failed: %w (output: %s)", err, string(output))
+	}
+
+	slog.Info("nginx reloaded successfully")
+	return nil
 }
 
 // mergeMovieData merges NFO data (priority) with TMDB data (fallback)
