@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -349,6 +350,13 @@ func main() {
 		// Build Astro site if enabled and not disabled via flag
 		if cfg.Output.AutoBuild && !*noBuild && scanResults.SuccessCount > 0 {
 			slog.Info("building astro website")
+
+			// Sync content to Astro website (needed in Docker)
+			if err := syncContentToWebsite(cfg); err != nil {
+				slog.Error("failed to sync content to website", "error", err)
+				// Continue with build anyway - may work with existing files
+			}
+
 			websiteDir := cfg.Output.WebsiteDir
 			if websiteDir == "" {
 				websiteDir = "./website"
@@ -400,6 +408,103 @@ func buildAstroSite(websiteDir string) error {
 	buildCmd.Stderr = os.Stderr
 
 	return buildCmd.Run()
+}
+
+// syncContentToWebsite copies MDX files and covers from persistent storage to Astro directories
+// This is necessary in Docker where /data/movies is separate from /app/website/src/content/movies
+func syncContentToWebsite(cfg *config.Config) error {
+	mdxSrc := cfg.Output.MDXDir
+	coversSrc := cfg.Output.CoversDir
+	websiteDir := cfg.Output.WebsiteDir
+	if websiteDir == "" {
+		websiteDir = "./website"
+	}
+
+	mdxDest := filepath.Join(websiteDir, "src", "content", "movies")
+	coversDest := filepath.Join(websiteDir, "public", "covers")
+
+	// Check if sync is needed (only in Docker when paths differ)
+	if mdxSrc == mdxDest {
+		slog.Debug("content sync not needed", "reason", "source_equals_destination")
+		return nil
+	}
+
+	slog.Info("syncing content to astro website",
+		"mdx_src", mdxSrc,
+		"mdx_dest", mdxDest,
+		"covers_src", coversSrc,
+		"covers_dest", coversDest,
+	)
+
+	// Create destination directories
+	if err := os.MkdirAll(mdxDest, 0755); err != nil {
+		return fmt.Errorf("failed to create MDX destination directory: %w", err)
+	}
+	if err := os.MkdirAll(coversDest, 0755); err != nil {
+		return fmt.Errorf("failed to create covers destination directory: %w", err)
+	}
+
+	// Copy MDX files
+	mdxCount := 0
+	if entries, err := os.ReadDir(mdxSrc); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mdx") {
+				continue
+			}
+			src := filepath.Join(mdxSrc, entry.Name())
+			dest := filepath.Join(mdxDest, entry.Name())
+			if err := copyFile(src, dest); err != nil {
+				slog.Warn("failed to copy MDX file", "file", entry.Name(), "error", err)
+			} else {
+				mdxCount++
+			}
+		}
+	}
+
+	// Copy cover images
+	coverCount := 0
+	if entries, err := os.ReadDir(coversSrc); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			src := filepath.Join(coversSrc, entry.Name())
+			dest := filepath.Join(coversDest, entry.Name())
+			if err := copyFile(src, dest); err != nil {
+				slog.Warn("failed to copy cover image", "file", entry.Name(), "error", err)
+			} else {
+				coverCount++
+			}
+		}
+	}
+
+	slog.Info("content synced to astro website",
+		"mdx_files", mdxCount,
+		"cover_images", coverCount,
+	)
+
+	return nil
+}
+
+// copyFile copies a single file from src to dest
+func copyFile(src, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, srcFile); err != nil {
+		return err
+	}
+
+	return destFile.Sync()
 }
 
 // mergeMovieData merges NFO data (priority) with TMDB data (fallback)

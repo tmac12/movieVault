@@ -93,6 +93,13 @@ func runScheduledScan(
 	// Trigger Astro build if enabled and files were successfully processed
 	if cfg.Output.AutoBuild && results.SuccessCount > 0 {
 		slog.Info("triggering astro build after scheduled scan")
+
+		// Sync content to Astro website (needed in Docker)
+		if err := syncContentToWebsite(cfg); err != nil {
+			slog.Error("failed to sync content to website", "error", err)
+			// Continue with build anyway - may work with existing files
+		}
+
 		websiteDir := cfg.Output.WebsiteDir
 		if websiteDir == "" {
 			websiteDir = "./website"
