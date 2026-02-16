@@ -407,7 +407,100 @@ func buildAstroSite(websiteDir string) error {
 	buildCmd.Stdout = os.Stdout
 	buildCmd.Stderr = os.Stderr
 
-	return buildCmd.Run()
+	if err := buildCmd.Run(); err != nil {
+		return err
+	}
+
+	// Copy built website to nginx directory (Docker only)
+	if err := syncBuildToNginx(websiteDir); err != nil {
+		slog.Warn("failed to sync build to nginx", "error", err)
+		// Not fatal - may not be in Docker environment
+	}
+
+	return nil
+}
+
+// syncBuildToNginx copies the Astro build output to nginx's serve directory
+// This is necessary in Docker where nginx serves from /usr/share/nginx/html
+func syncBuildToNginx(websiteDir string) error {
+	distDir := filepath.Join(websiteDir, "dist")
+	nginxDir := "/usr/share/nginx/html"
+
+	// Check if nginx directory exists (Docker only)
+	if _, err := os.Stat(nginxDir); os.IsNotExist(err) {
+		slog.Debug("nginx directory not found, skipping sync", "path", nginxDir)
+		return nil
+	}
+
+	// Check if dist directory exists
+	if _, err := os.Stat(distDir); os.IsNotExist(err) {
+		return fmt.Errorf("dist directory does not exist: %s", distDir)
+	}
+
+	slog.Info("syncing astro build to nginx", "from", distDir, "to", nginxDir)
+
+	// Read all files from dist
+	entries, err := os.ReadDir(distDir)
+	if err != nil {
+		return fmt.Errorf("failed to read dist directory: %w", err)
+	}
+
+	// Copy each file/directory
+	copiedCount := 0
+	for _, entry := range entries {
+		src := filepath.Join(distDir, entry.Name())
+		dest := filepath.Join(nginxDir, entry.Name())
+
+		if entry.IsDir() {
+			// Copy directory recursively
+			if err := copyDir(src, dest); err != nil {
+				slog.Warn("failed to copy directory", "dir", entry.Name(), "error", err)
+				continue
+			}
+		} else {
+			// Copy file
+			if err := copyFile(src, dest); err != nil {
+				slog.Warn("failed to copy file", "file", entry.Name(), "error", err)
+				continue
+			}
+		}
+		copiedCount++
+	}
+
+	slog.Info("astro build synced to nginx", "items_copied", copiedCount)
+	return nil
+}
+
+// copyDir recursively copies a directory
+func copyDir(src, dest string) error {
+	// Create destination directory
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+
+	// Read source directory
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	// Copy each entry
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		destPath := filepath.Join(dest, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, destPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, destPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // syncContentToWebsite copies MDX files and covers from persistent storage to Astro directories
