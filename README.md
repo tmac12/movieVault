@@ -160,14 +160,14 @@ scanner:
   concurrent_workers: 5
 
   # Scheduled scanning (periodic)
-  schedule_enabled: "${SCHEDULE_ENABLED:-false}"  # Or set true/false directly
-  schedule_interval: "${SCHEDULE_INTERVAL:-60}"   # Minutes between scans
-  schedule_on_startup: true                        # Run immediately on startup
+  schedule_enabled: ${SCHEDULE_ENABLED}    # bool — passed by docker-compose env
+  schedule_interval: ${SCHEDULE_INTERVAL}  # int  — passed by docker-compose env
+  schedule_on_startup: true                # Run immediately on startup
 
 output:
   mdx_dir: "/data/movies"
   covers_dir: "/data/covers"
-  auto_build: false  # Entrypoint handles the build
+  auto_build: true   # Required: scanner builds Astro + reloads nginx after each scan
 
 options:
   rate_limit_delay: 250
@@ -189,6 +189,8 @@ services:
       - ./config/config.docker.yaml:/config/config.yaml:ro  # Add this
     environment:
       - TMDB_API_KEY=${TMDB_API_KEY}
+      - SCHEDULE_ENABLED=${SCHEDULE_ENABLED:-false}
+      - SCHEDULE_INTERVAL=${SCHEDULE_INTERVAL:-60}
 ```
 
 ### Managing the Container
@@ -219,7 +221,7 @@ When `SCHEDULE_ENABLED=true`, the scanner runs continuously in the background, p
 - Run an initial scan on startup (configurable via `schedule_on_startup`)
 - Continue scanning at the configured interval
 - Process only new files (incremental scans)
-- Automatically rebuild the Astro site after each scan (if `auto_build` is enabled)
+- Automatically rebuild the Astro site and reload nginx after each scan (`auto_build: true` required in config)
 - Run alongside the nginx web server in the same container
 
 ### Get Your TMDB API Key
@@ -279,8 +281,8 @@ scanner:
     - "/external-movies"
 
   # Scheduled scanning (periodic)
-  schedule_enabled: "${SCHEDULE_ENABLED:-false}"
-  schedule_interval: "${SCHEDULE_INTERVAL:-60}"   # Minutes between scans
+  schedule_enabled: ${SCHEDULE_ENABLED}
+  schedule_interval: ${SCHEDULE_INTERVAL}  # Minutes between scans
   schedule_on_startup: true
 ```
 
