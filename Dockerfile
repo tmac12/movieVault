@@ -24,24 +24,18 @@ RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -v -o scanner .
     ls -lah scanner && \
     file scanner
 
-# Stage 2: Build Astro website (we'll skip this for initial setup)
-FROM node:20-alpine AS web-builder
+# Stage 2: Prepare Astro website source (no build yet)
+FROM node:20-alpine AS web-source
 
 WORKDIR /build
 
-# Copy package files
-COPY website/package*.json ./
-RUN npm ci --only=production
-
-# Copy website source
+# Just copy source files, don't install dependencies yet
 COPY website/ ./
-
-# Build will happen at runtime with actual data
 
 # Stage 3: Final runtime image
 FROM nginx:alpine
 
-# Install Node.js and Go runtime dependencies
+# Install Node.js and npm
 RUN apk add --no-cache nodejs npm
 
 # Copy Go scanner binary
@@ -50,8 +44,12 @@ RUN chmod +x /usr/local/bin/scanner && \
     ls -lah /usr/local/bin/scanner && \
     /usr/local/bin/scanner --help || echo "Scanner installed successfully"
 
-# Copy Astro website source (not built, will build at runtime)
-COPY --from=web-builder /build /app/website
+# Copy Astro website source (without node_modules)
+COPY --from=web-source /build /app/website
+
+# Install npm dependencies in the final image to ensure compatibility
+# This fixes esbuild native binary issues
+RUN cd /app/website && npm ci
 
 # Create data directories
 RUN mkdir -p /data/movies /data/covers /config

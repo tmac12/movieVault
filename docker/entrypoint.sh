@@ -43,18 +43,39 @@ fi
 echo "Content synced: $(ls /app/website/src/content/movies/*.mdx 2>/dev/null | wc -l) movies found"
 
 # Check if website is built
-if [ ! -d "/app/website/dist" ]; then
-  echo "Building Astro website..."
+# Skip build if SCHEDULE_ENABLED=true (scanner handles all builds)
+if [ ! -d "/app/website/dist" ] && [ "$SCHEDULE_ENABLED" != "true" ]; then
+  echo "Building Astro website (legacy mode)..."
   cd /app/website
   if ! npm run build; then
     echo "ERROR: Astro build failed. Website may not be available."
     >&2 echo "Astro build failed at $(date)"
   fi
   cd /
+elif [ "$SCHEDULE_ENABLED" = "true" ]; then
+  echo "Skipping entrypoint build - scanner will build on startup (schedule_on_startup: true)"
 fi
 
-# Copy built website to nginx directory
-if [ -d "/app/website/dist" ]; then
+# Wait for scanner's initial build to complete (when SCHEDULE_ENABLED=true)
+if [ "$SCHEDULE_ENABLED" = "true" ]; then
+  echo "Waiting for scanner's initial build to complete..."
+  WAIT_COUNT=0
+  while [ ! -d "/app/website/dist" ] && [ $WAIT_COUNT -lt 60 ]; do
+    sleep 2
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+  done
+
+  if [ -d "/app/website/dist" ]; then
+    echo "Scanner build completed, syncing to nginx..."
+    cp -r /app/website/dist/* /usr/share/nginx/html/ 2>/dev/null || true
+  else
+    echo "WARNING: Scanner build not ready after 120s, nginx will start with placeholder content"
+    # Create minimal placeholder
+    mkdir -p /usr/share/nginx/html
+    echo "<h1>MovieVault is scanning your library...</h1><p>Refresh in a moment.</p>" > /usr/share/nginx/html/index.html
+  fi
+elif [ -d "/app/website/dist" ]; then
+  # Legacy mode: copy built website to nginx directory
   echo "Copying website to nginx directory..."
   cp -r /app/website/dist/* /usr/share/nginx/html/
 fi
