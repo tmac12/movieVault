@@ -157,11 +157,17 @@ scanner:
     - ".avi"
     - ".mov"
     - ".m4v"
+  concurrent_workers: 5
+
+  # Scheduled scanning (periodic)
+  schedule_enabled: "${SCHEDULE_ENABLED:-false}"  # Or set true/false directly
+  schedule_interval: "${SCHEDULE_INTERVAL:-60}"   # Minutes between scans
+  schedule_on_startup: true                        # Run immediately on startup
 
 output:
   mdx_dir: "/data/movies"
   covers_dir: "/data/covers"
-  auto_build: true
+  auto_build: false  # Entrypoint handles the build
 
 options:
   rate_limit_delay: 250
@@ -271,6 +277,11 @@ scanner:
   directories:
     - "/movies"              # Docker mount paths
     - "/external-movies"
+
+  # Scheduled scanning (periodic)
+  schedule_enabled: "${SCHEDULE_ENABLED:-false}"
+  schedule_interval: "${SCHEDULE_INTERVAL:-60}"   # Minutes between scans
+  schedule_on_startup: true
 ```
 
 7. Start the services:
@@ -336,6 +347,11 @@ scanner:
   directories:
     - "/home/marco/Movies"
     - "/media/external/Films"
+
+  # Scheduled scanning (optional)
+  schedule_enabled: false    # Set to true for periodic background scans
+  schedule_interval: 60      # Minutes between scans
+  schedule_on_startup: true  # Run a scan immediately when starting
 
 output:
   mdx_dir: "./website/src/content/movies"

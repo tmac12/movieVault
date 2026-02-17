@@ -15,10 +15,15 @@ scanner:
     - ".wmv"
   # Concurrent scanning - process multiple files in parallel
   concurrent_workers: 5    # Number of concurrent workers for parallel scanning (default: 5)
-  # Watch mode settings (US-021) - monitor directories for new/changed files
+  # Watch mode - monitor directories for new/changed files
   watch_mode: false        # Enable watch mode to continuously monitor directories (default: false)
   watch_debounce: 30       # Seconds to wait after file change before processing (default: 30)
   watch_recursive: true    # Watch subdirectories recursively (default: true)
+
+  # Scheduled scanning - periodic scans at a fixed interval
+  schedule_enabled: false  # Enable scheduled periodic scans (default: false)
+  schedule_interval: 60    # Minutes between scans (default: 60)
+  schedule_on_startup: true  # Run an initial scan immediately on startup (default: true)
 
 output:
   mdx_dir: "./website/src/content/movies"     # Where to write MDX files

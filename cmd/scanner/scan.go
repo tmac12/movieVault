@@ -311,9 +311,19 @@ func runScan(
 					"image_type", "cover",
 					"source", "TMDB",
 				)
-				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-				if searchResult != nil && searchResult.PosterPath != "" {
-					if dlErr := tmdbClient.DownloadImage(searchResult.PosterPath, coverPath, "poster"); dlErr != nil {
+				var tmdbPosterPath string
+				if movie.TMDBID > 0 {
+					if details, detErr := tmdbClient.GetMovieDetails(movie.TMDBID); detErr == nil && details.PosterPath != "" {
+						tmdbPosterPath = details.PosterPath
+					}
+				}
+				if tmdbPosterPath == "" {
+					if searchResult, searchErr := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear); searchErr == nil && searchResult != nil {
+						tmdbPosterPath = searchResult.PosterPath
+					}
+				}
+				if tmdbPosterPath != "" {
+					if dlErr := tmdbClient.DownloadImage(tmdbPosterPath, coverPath, "poster"); dlErr != nil {
 						slog.Warn("image download failed",
 							"file", file.FileName,
 							"movie", movie.Title,
@@ -384,9 +394,19 @@ func runScan(
 					"image_type", "backdrop",
 					"source", "TMDB",
 				)
-				searchResult, _ := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear)
-				if searchResult != nil && searchResult.BackdropPath != "" {
-					if dlErr := tmdbClient.DownloadImage(searchResult.BackdropPath, backdropPath, "backdrop"); dlErr != nil {
+				var tmdbBackdropPath string
+				if movie.TMDBID > 0 {
+					if details, detErr := tmdbClient.GetMovieDetails(movie.TMDBID); detErr == nil && details.BackdropPath != "" {
+						tmdbBackdropPath = details.BackdropPath
+					}
+				}
+				if tmdbBackdropPath == "" {
+					if searchResult, searchErr := tmdbClient.SearchMovie(movie.Title, movie.ReleaseYear); searchErr == nil && searchResult != nil {
+						tmdbBackdropPath = searchResult.BackdropPath
+					}
+				}
+				if tmdbBackdropPath != "" {
+					if dlErr := tmdbClient.DownloadImage(tmdbBackdropPath, backdropPath, "backdrop"); dlErr != nil {
 						slog.Warn("image download failed",
 							"file", file.FileName,
 							"movie", movie.Title,
