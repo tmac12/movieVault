@@ -11,7 +11,7 @@ interface Props {
 const { title, slug, coverImage, rating, releaseYear, genres } = Astro.props;
 ---
 
-<a href={`/movies/${slug}`} class="movie-card">
+<a href={`/movies/${slug}`} class="movie-card" data-year={releaseYear}>
   <div class="poster-container">
     <div class="poster-skeleton"></div>
     <img

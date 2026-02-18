@@ -1,0 +1,217 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  movies: CollectionEntry<'movies'>[];
+}
+
+const { movies } = Astro.props;
+
+const years = movies.map((m) => m.data.releaseYear).filter((y) => y > 0);
+const uniqueYears = [...new Set(years)];
+const minYear = uniqueYears.length ? Math.min(...uniqueYears) : 1900;
+const maxYear = uniqueYears.length ? Math.max(...uniqueYears) : new Date().getFullYear();
+---
+
+{uniqueYears.length > 1 && (
+  <div class="year-filter">
+    <div class="year-filter-header">
+      <span class="year-filter-label">Year</span>
+      <span class="year-range-display">
+        <span id="year-min-display">{minYear}</span>
+        &ndash;
+        <span id="year-max-display">{maxYear}</span>
+      </span>
+    </div>
+    <div class="slider-container">
+      <div class="slider-track" id="year-slider-track"></div>
+      <input
+        type="range"
+        id="year-min-input"
+        min={minYear}
+        max={maxYear}
+        value={minYear}
+        aria-label="Minimum year"
+      />
+      <input
+        type="range"
+        id="year-max-input"
+        min={minYear}
+        max={maxYear}
+        value={maxYear}
+        aria-label="Maximum year"
+      />
+    </div>
+  </div>
+)}
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const minInput = document.getElementById('year-min-input') as HTMLInputElement | null;
+    const maxInput = document.getElementById('year-max-input') as HTMLInputElement | null;
+    const minDisplay = document.getElementById('year-min-display');
+    const maxDisplay = document.getElementById('year-max-display');
+    const track = document.getElementById('year-slider-track');
+
+    if (!minInput || !maxInput || !minDisplay || !maxDisplay || !track) return;
+
+    const rangeMin = parseInt(minInput.min);
+    const rangeMax = parseInt(minInput.max);
+
+    const pct = (v: number) => ((v - rangeMin) / (rangeMax - rangeMin)) * 100;
+
+    const updateFill = (lo: number, hi: number) => {
+      track.style.setProperty('--fill-left', pct(lo) + '%');
+      track.style.setProperty('--fill-right', (100 - pct(hi)) + '%');
+    };
+
+    const applyFilter = (lo: number, hi: number) => {
+      document.querySelectorAll<HTMLElement>('.movie-card[data-year]').forEach((card) => {
+        const year = parseInt(card.dataset.year || '0');
+        card.classList.toggle('year-hidden', year < lo || year > hi);
+      });
+    };
+
+    // Initialise fill to full range
+    updateFill(rangeMin, rangeMax);
+
+    const onMinChange = () => {
+      let lo = parseInt(minInput.value);
+      let hi = parseInt(maxInput.value);
+      if (lo > hi) {
+        lo = hi;
+        minInput.value = String(lo);
+      }
+      minDisplay.textContent = String(lo);
+      updateFill(lo, hi);
+      applyFilter(lo, hi);
+    };
+
+    const onMaxChange = () => {
+      let lo = parseInt(minInput.value);
+      let hi = parseInt(maxInput.value);
+      if (hi < lo) {
+        hi = lo;
+        maxInput.value = String(hi);
+      }
+      maxDisplay.textContent = String(hi);
+      updateFill(lo, hi);
+      applyFilter(lo, hi);
+    };
+
+    minInput.addEventListener('input', onMinChange);
+    minInput.addEventListener('change', onMinChange);
+    maxInput.addEventListener('input', onMaxChange);
+    maxInput.addEventListener('change', onMaxChange);
+  });
+</script>
+
+<style>
+  .year-filter {
+    margin: 0 0 2rem;
+  }
+
+  .year-filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .year-filter-label {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-muted);
+  }
+
+  .year-range-display {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent-color);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Slider container ─────────────────────────────── */
+  .slider-container {
+    position: relative;
+    height: 36px;
+  }
+
+  .slider-track {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 4px;
+    width: 100%;
+    background: var(--border-color);
+    border-radius: 2px;
+    pointer-events: none;
+  }
+
+  /* Gold fill between the two thumbs */
+  .slider-track::after {
+    content: '';
+    position: absolute;
+    left: var(--fill-left, 0%);
+    right: var(--fill-right, 0%);
+    top: 0;
+    bottom: 0;
+    background: var(--accent-color);
+    border-radius: 2px;
+  }
+
+  /* ── Range inputs ─────────────────────────────────── */
+  input[type='range'] {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    background: transparent;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Webkit thumb */
+  input[type='range']::-webkit-slider-thumb {
+    pointer-events: all;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid var(--bg-color);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+
+  input[type='range']::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+  }
+
+  /* Firefox thumb */
+  input[type='range']::-moz-range-thumb {
+    pointer-events: all;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    border: 2px solid var(--bg-color);
+    cursor: pointer;
+    transition: transform 0.15s;
+  }
+
+  input[type='range']::-moz-range-thumb:hover {
+    transform: scale(1.2);
+  }
+
+  /* Hide the default track on both engines */
+  input[type='range']::-webkit-slider-runnable-track {
+    background: transparent;
+  }
+
+  input[type='range']::-moz-range-track {
+    background: transparent;
+  }
+</style>

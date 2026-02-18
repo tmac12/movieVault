@@ -4,6 +4,7 @@ import BaseLayout from '../layouts/BaseLayout.astro';
 import MovieGrid from '../components/MovieGrid.astro';
 import SearchBar from '../components/SearchBar.astro';
 import GenreFilter from '../components/GenreFilter.astro';
+import YearFilter from '../components/YearFilter.astro';
 
 // Get all movies and sort by rating (descending)
 const movies = (await getCollection('movies')).sort((a, b) => b.data.rating - a.data.rating);
@@ -55,6 +56,8 @@ const formatTotalRuntime = (minutes: number) => {
   <SearchBar />
 
   <GenreFilter movies={movies} />
+
+  <YearFilter movies={movies} />
 
   {movies.length === 0 ? (
     <div class="empty-state">

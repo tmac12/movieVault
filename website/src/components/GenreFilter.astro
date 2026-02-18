@@ -50,12 +50,8 @@ const genres = Array.from(allGenres).sort();
         // Filter movies
         movieCards.forEach((card) => {
           const cardGenres = card.querySelector('.genres-preview')?.textContent?.toLowerCase() || '';
-
-          if (genre === 'all' || cardGenres.includes(genre || '')) {
-            (card as HTMLElement).style.display = '';
-          } else {
-            (card as HTMLElement).style.display = 'none';
-          }
+          const matches = genre === 'all' || cardGenres.includes(genre || '');
+          (card as HTMLElement).classList.toggle('genre-hidden', !matches);
         });
       });
     });
