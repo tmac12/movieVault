@@ -17,8 +17,8 @@ const genres = Array.from(allGenres).sort();
 ---
 
 {genres.length > 0 && (
-  <div class="genre-filter">
-    <h3>Filter by Genre</h3>
+  <div class="genre-filter collapsed">
+    <h3 class="filter-toggle">Filter by Genre <span class="chevron">▶</span></h3>
     <div class="genre-chips" data-genre-filter>
       <button class="genre-chip active" data-genre="all">All</button>
       {genres.map((genre) => (
@@ -31,8 +31,13 @@ const genres = Array.from(allGenres).sort();
 )}
 
 <script>
-  // Client-side genre filtering
   document.addEventListener('DOMContentLoaded', () => {
+    // Collapse toggle
+    document.querySelector('.genre-filter .filter-toggle')?.addEventListener('click', () => {
+      const el = document.querySelector('.genre-filter');
+      el?.classList.toggle('collapsed');
+    });
+
     const filterContainer = document.querySelector('[data-genre-filter]');
     if (!filterContainer) return;
 
@@ -67,6 +72,26 @@ const genres = Array.from(allGenres).sort();
     font-size: 1.25rem;
     margin-bottom: 1rem;
     color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .genre-filter.collapsed .genre-chips {
+    display: none;
+  }
+
+  .genre-filter.collapsed h3 {
+    margin-bottom: 0;
+  }
+
+  .chevron {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+  }
+
+  .genre-filter:not(.collapsed) .chevron {
+    display: inline-block;
+    transform: rotate(90deg);
   }
 
   .genre-chips {

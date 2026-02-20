@@ -22,8 +22,8 @@ const getLabel = (path: string) => path.split('/').filter(Boolean).pop() ?? path
 ---
 
 {libraries.length > 1 && (
-  <div class="library-filter">
-    <h3>Filter by Library</h3>
+  <div class="library-filter collapsed">
+    <h3 class="filter-toggle">Filter by Library <span class="chevron">▶</span></h3>
     <div class="library-chips" data-library-filter>
       <button class="library-chip active" data-library="all">All</button>
       {libraries.map((lib) => (
@@ -37,6 +37,11 @@ const getLabel = (path: string) => path.split('/').filter(Boolean).pop() ?? path
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // Collapse toggle
+    document.querySelector('.library-filter .filter-toggle')?.addEventListener('click', () => {
+      document.querySelector('.library-filter')?.classList.toggle('collapsed');
+    });
+
     const filterContainer = document.querySelector('[data-library-filter]');
     if (!filterContainer) return;
 
@@ -51,15 +56,12 @@ const getLabel = (path: string) => path.split('/').filter(Boolean).pop() ?? path
         chips.forEach((c) => c.classList.remove('active'));
         chip.classList.add('active');
 
-        // Filter movies; cards without sourceDir (legacy MDX) are always visible
         movieCards.forEach((card) => {
           const cardSource = card.dataset.sourcedir ?? '';
           if (library === 'all') {
             card.classList.remove('library-hidden');
           } else {
-            // Cards without sourceDir stay visible when a specific library is selected
-            const matches = cardSource === '' || cardSource === library;
-            card.classList.toggle('library-hidden', !matches);
+            card.classList.toggle('library-hidden', cardSource !== library);
           }
         });
       });
@@ -76,6 +78,26 @@ const getLabel = (path: string) => path.split('/').filter(Boolean).pop() ?? path
     font-size: 1.25rem;
     margin-bottom: 1rem;
     color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .library-filter.collapsed .library-chips {
+    display: none;
+  }
+
+  .library-filter.collapsed h3 {
+    margin-bottom: 0;
+  }
+
+  .chevron {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+  }
+
+  .library-filter:not(.collapsed) .chevron {
+    display: inline-block;
+    transform: rotate(90deg);
   }
 
   .library-chips {

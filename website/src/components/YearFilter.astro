@@ -14,9 +14,9 @@ const maxYear = uniqueYears.length ? Math.max(...uniqueYears) : new Date().getFu
 ---
 
 {uniqueYears.length > 1 && (
-  <div class="year-filter">
-    <div class="year-filter-header">
-      <span class="year-filter-label">Year</span>
+  <div class="year-filter collapsed">
+    <div class="year-filter-header filter-toggle">
+      <span class="year-filter-label">Year <span class="chevron">▶</span></span>
       <span class="year-range-display">
         <span id="year-min-display">{minYear}</span>
         &ndash;
@@ -47,6 +47,11 @@ const maxYear = uniqueYears.length ? Math.max(...uniqueYears) : new Date().getFu
 
 <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // Collapse toggle
+    document.querySelector('.year-filter .filter-toggle')?.addEventListener('click', () => {
+      document.querySelector('.year-filter')?.classList.toggle('collapsed');
+    });
+
     const minInput = document.getElementById('year-min-input') as HTMLInputElement | null;
     const maxInput = document.getElementById('year-max-input') as HTMLInputElement | null;
     const minDisplay = document.getElementById('year-min-display');
@@ -116,12 +121,32 @@ const maxYear = uniqueYears.length ? Math.max(...uniqueYears) : new Date().getFu
     justify-content: space-between;
     align-items: center;
     margin-bottom: 0.75rem;
+    cursor: pointer;
+    user-select: none;
   }
 
   .year-filter-label {
     font-size: 1.25rem;
     font-weight: 700;
     color: var(--text-muted);
+  }
+
+  .year-filter.collapsed .slider-container {
+    display: none;
+  }
+
+  .year-filter.collapsed .year-filter-header {
+    margin-bottom: 0;
+  }
+
+  .chevron {
+    font-size: 0.75rem;
+    transition: transform 0.2s;
+  }
+
+  .year-filter:not(.collapsed) .chevron {
+    display: inline-block;
+    transform: rotate(90deg);
   }
 
   .year-range-display {
