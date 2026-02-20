@@ -52,8 +52,15 @@ func (w *MDXWriter) GenerateMDX(movie *Movie) (string, error) {
 	// Write frontmatter delimiter
 	sb.WriteString("---\n")
 
-	// Marshal movie data to YAML
-	yamlData, err := yaml.Marshal(movie)
+	// Marshal movie data to YAML, forcing double-quote style on path fields
+	// to prevent yaml.v3 from emitting unquoted scalars for paths that contain
+	// ": " (e.g. "All Is Lost: Tutto Perduto"), which YAML parsers read as mappings.
+	var docNode yaml.Node
+	if err := docNode.Encode(movie); err != nil {
+		return "", fmt.Errorf("failed to marshal movie to YAML: %w", err)
+	}
+	forceQuotedFields(&docNode, "filePath", "fileName")
+	yamlData, err := yaml.Marshal(&docNode)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal movie to YAML: %w", err)
 	}
@@ -145,6 +152,29 @@ func (w *MDXWriter) GetAbsoluteCoverPath(slug string) string {
 // GetAbsoluteBackdropPath returns the absolute file system path for a backdrop image
 func (w *MDXWriter) GetAbsoluteBackdropPath(slug string) string {
 	return filepath.Join(w.coversDir, slug+"-backdrop.jpg")
+}
+
+// forceQuotedFields sets DoubleQuotedStyle on the named scalar fields inside a
+// yaml.DocumentNode → MappingNode tree. This prevents yaml.v3 from emitting
+// bare scalars for file paths that contain ": ", which YAML parsers would
+// otherwise interpret as a nested mapping.
+func forceQuotedFields(doc *yaml.Node, keys ...string) {
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return
+	}
+	mapping := doc.Content[0]
+	if mapping.Kind != yaml.MappingNode {
+		return
+	}
+	keySet := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		keySet[k] = true
+	}
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		if keySet[mapping.Content[i].Value] {
+			mapping.Content[i+1].Style = yaml.DoubleQuotedStyle
+		}
+	}
 }
 
 // formatFileSize formats a file size in bytes to a human-readable string

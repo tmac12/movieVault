@@ -1,17 +1,28 @@
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+---
+
+## [1.4.6] - 2026-02-20
+
+### Fixed
+
+- **YAML path quoting crash:** File paths containing `: ` (e.g. `All Is Lost: Tutto Perduto`) caused `gopkg.in/yaml.v3` to emit an unquoted YAML scalar that YAML parsers re-read as a mapping. This crashed the Astro content build with `filePath: Expected type "string", received "object"`. The MDX writer now uses `yaml.Node` encoding with explicit `DoubleQuotedStyle` on `filePath` and `fileName` fields to guarantee safe output for all paths. (`internal/writer/mdx.go`)
+- **Astro schema resilience for path fields:** `filePath` and `fileName` in the content collection schema now use `z.preprocess` to coerce any non-string value (e.g. from a pre-existing malformed MDX file) to an empty string, preventing build failures from previously generated files without requiring a full rescan. (`website/src/content/config.ts`)
+
 ---
 
 ## [1.4.5] - 2026-02-20
 
 ### Added
 
-- **Collapse Filter** Collapse filters
+- **Collapsible filters:** Genre, Library, and Year filter sections are now collapsed by default. Clicking the section header toggles visibility. A `▶` chevron rotates to indicate open/closed state (CSS-only, no extra JS). (`website/src/components/GenreFilter.astro`, `LibraryFilter.astro`, `YearFilter.astro`)
 
 ### Fixed
 
-- **Filter by library** 
+- **Library filter showing wrong movies:** When filtering by a specific library, movies without a `sourceDir` field (scanned before source-tracking was added) were always visible regardless of the active filter. They now correctly hide when a specific library chip is selected, and return when "All" is chosen. (`website/src/components/LibraryFilter.astro`)
+
 ---
 
 ## [1.4.4] - 2026-02-20
