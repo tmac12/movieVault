@@ -15,8 +15,9 @@ type FileInfo struct {
 	Year       int
 	Size       int64
 	Slug       string
-	DiscNumber int  // Disc/part number extracted from filename (0 = not a multi-disc file)
-	ShouldScan bool // Whether to scan this file (false if MDX already exists)
+	DiscNumber int    // Disc/part number extracted from filename (0 = not a multi-disc file)
+	ShouldScan bool   // Whether to scan this file (false if MDX already exists)
+	SourceDir  string // Configured root directory that contains this file
 }
 
 // SkippedDisc records a secondary disc that was filtered out by FilterMultiDiscDuplicates.
@@ -106,6 +107,7 @@ func (s *Scanner) ScanDirectory(path string) ([]FileInfo, error) {
 			Slug:       slug,
 			DiscNumber: discNumber,
 			ShouldScan: !s.MDXExists(slug),
+			SourceDir:  path,
 		}
 
 		files = append(files, fileInfo)

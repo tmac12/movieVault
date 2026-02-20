@@ -20,6 +20,7 @@ const moviesCollection = defineCollection({
     imdbId: z.string().optional(),
     scannedAt: z.coerce.date(),
     fileSize: z.number(),
+    sourceDir: z.string().optional(),
   }),
 });
 

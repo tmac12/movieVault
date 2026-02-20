@@ -239,7 +239,8 @@ button {
 /* Filter visibility — composable, each filter manages its own class.
    !important beats Astro's scoped component styles (equal specificity, later cascade). */
 .movie-card.genre-hidden,
-.movie-card.year-hidden {
+.movie-card.year-hidden,
+.movie-card.library-hidden {
   display: none !important;
 }
 

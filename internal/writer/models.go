@@ -13,6 +13,7 @@ type Movie struct {
 	BackdropImage string    `yaml:"backdropImage"`
 	FilePath      string    `yaml:"filePath"`
 	FileName      string    `yaml:"fileName"`
+	SourceDir     string    `yaml:"sourceDir,omitempty"`
 	Rating        float64   `yaml:"rating"`
 	ReleaseYear   int       `yaml:"releaseYear"`
 	ReleaseDate   string    `yaml:"releaseDate"`

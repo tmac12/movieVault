@@ -6,12 +6,14 @@ interface Props {
   rating: number;
   releaseYear: number;
   genres: string[];
+  sourceDir?: string;
 }
 
-const { title, slug, coverImage, rating, releaseYear, genres } = Astro.props;
+const { title, slug, coverImage, rating, releaseYear, genres, sourceDir } = Astro.props;
+const libraryLabel = sourceDir ? sourceDir.split('/').filter(Boolean).pop() ?? sourceDir : null;
 ---
 
-<a href={`/movies/${slug}`} class="movie-card" data-year={releaseYear}>
+<a href={`/movies/${slug}`} class="movie-card" data-year={releaseYear} data-sourcedir={sourceDir ?? ''}>
   <div class="poster-container">
     <div class="poster-skeleton"></div>
     <img
@@ -37,6 +39,7 @@ const { title, slug, coverImage, rating, releaseYear, genres } = Astro.props;
       {genres.slice(0, 2).join(', ')}
     </div>
   </div>
+  {libraryLabel && <div class="library-badge">{libraryLabel}</div>}
 </a>
 
 <style>
@@ -151,5 +154,20 @@ const { title, slug, coverImage, rating, releaseYear, genres } = Astro.props;
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 120px;
+  }
+
+  .library-badge {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    background: var(--border-color);
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

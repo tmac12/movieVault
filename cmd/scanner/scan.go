@@ -260,6 +260,7 @@ func runScan(
 		movie.FilePath = file.Path
 		movie.FileName = file.FileName
 		movie.FileSize = file.Size
+		movie.SourceDir = file.SourceDir
 
 		slog.Info("metadata fetched",
 			"movie", movie.Title,

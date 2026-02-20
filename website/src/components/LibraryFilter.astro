@@ -1,0 +1,107 @@
+---
+import type { CollectionEntry } from 'astro:content';
+
+interface Props {
+  movies: CollectionEntry<'movies'>[];
+}
+
+const { movies } = Astro.props;
+
+// Extract unique source directories (skip undefined/empty)
+const allLibraries = new Set<string>();
+movies.forEach((movie) => {
+  if (movie.data.sourceDir) {
+    allLibraries.add(movie.data.sourceDir);
+  }
+});
+
+const libraries = Array.from(allLibraries).sort();
+
+// Compute display label: last non-empty path segment
+const getLabel = (path: string) => path.split('/').filter(Boolean).pop() ?? path;
+---
+
+{libraries.length > 1 && (
+  <div class="library-filter">
+    <h3>Filter by Library</h3>
+    <div class="library-chips" data-library-filter>
+      <button class="library-chip active" data-library="all">All</button>
+      {libraries.map((lib) => (
+        <button class="library-chip" data-library={lib}>
+          {getLabel(lib)}
+        </button>
+      ))}
+    </div>
+  </div>
+)}
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const filterContainer = document.querySelector('[data-library-filter]');
+    if (!filterContainer) return;
+
+    const chips = filterContainer.querySelectorAll('.library-chip');
+    const movieCards = document.querySelectorAll<HTMLElement>('.movie-card[data-sourcedir]');
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const library = chip.getAttribute('data-library');
+
+        // Update active state
+        chips.forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+
+        // Filter movies; cards without sourceDir (legacy MDX) are always visible
+        movieCards.forEach((card) => {
+          const cardSource = card.dataset.sourcedir ?? '';
+          if (library === 'all') {
+            card.classList.remove('library-hidden');
+          } else {
+            // Cards without sourceDir stay visible when a specific library is selected
+            const matches = cardSource === '' || cardSource === library;
+            card.classList.toggle('library-hidden', !matches);
+          }
+        });
+      });
+    });
+  });
+</script>
+
+<style>
+  .library-filter {
+    margin: 2rem 0;
+  }
+
+  .library-filter h3 {
+    font-size: 1.25rem;
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+  }
+
+  .library-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .library-chip {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    background: var(--card-bg);
+    border: 2px solid var(--border-color);
+    border-radius: 20px;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .library-chip:hover {
+    border-color: var(--accent-color);
+  }
+
+  .library-chip.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: var(--bg-color);
+  }
+</style>

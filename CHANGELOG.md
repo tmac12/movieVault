@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.4.4] - 2026-02-20
+
+### Added
+
+- **Multi-library filtering:** New `LibraryFilter` component displays filter chips when movies span multiple source directories. Only renders when more than one library is detected. Clicking a chip hides movies from other libraries; legacy movies without `sourceDir` remain always visible. (`website/src/components/LibraryFilter.astro`)
+- **Year filter:** New `YearFilter` component lets users filter movies by release year with interactive chips. (`website/src/components/YearFilter.astro`)
+- **Source directory tracking:** Scanner now records `sourceDir` (the configured root directory) for each scanned file. Propagated through the MDX pipeline as an optional frontmatter field. Enables multi-library UI features. (`internal/scanner/scanner.go`, `cmd/scanner/scan.go`, `internal/writer/models.go`, `website/src/content/config.ts`)
+- **Library badge on movie cards:** Movie cards display the source library name as a small badge when `sourceDir` is present, using the last path segment as a human-readable label. (`website/src/components/MovieCard.astro`)
+- **Multi-platform Docker builds:** Dockerfile updated to use BuildKit's `TARGETOS`/`TARGETARCH` for cross-compilation. Supports `linux/amd64` and `linux/arm64`.
+- **Docker content sync (`syncBuildToNginx`):** New entrypoint logic copies the Astro build output to the nginx serve directory with correct file permissions and triggers a live nginx reload. Handles website build based on whether scheduled scanning is active. (`docker/entrypoint.sh`)
+
+### Changed
+
+- **TMDB image retrieval:** Poster and backdrop images are now sourced from the full movie details endpoint rather than search results, improving image quality and availability. (`internal/metadata/tmdb.go`)
+- **Docker configuration restructured:** Persistent data (MDX files, covers, cache) and Docker config now live under `configServer/` directory for cleaner separation from source. `docker-compose.yml` updated to reflect new mount paths.
+- **Composable filter CSS:** Added `.movie-card.library-hidden` rule to `global.css` so genre, year, and library filters coexist without style conflicts.
+
+### Fixed
+
+- **Docker entrypoint scheduling:** Entrypoint script correctly detects `SCHEDULE_ENABLED` and runs the scanner in background mode when scheduling is active; falls back to a one-shot scan otherwise.
+
+---
+
 ## [1.4.0] - 2026-02-13
 
 ### Added
