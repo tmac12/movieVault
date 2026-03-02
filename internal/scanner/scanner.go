@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,7 +153,8 @@ func (s *Scanner) ScanAll(directories []string) ([]FileInfo, error) {
 
 		files, err := s.ScanDirectory(dir)
 		if err != nil {
-			return nil, err
+			slog.Warn("failed to scan directory, skipping", "dir", dir, "error", err)
+			continue
 		}
 
 		allFiles = append(allFiles, files...)

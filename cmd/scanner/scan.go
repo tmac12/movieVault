@@ -51,6 +51,7 @@ func runScan(
 	if err != nil {
 		slog.Error("failed to scan directories", "error", err)
 		results.Errors = append(results.Errors, err)
+		results.ErrorCount++
 		return results
 	}
 

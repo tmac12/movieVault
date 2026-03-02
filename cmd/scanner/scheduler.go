@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -90,8 +92,17 @@ func runScheduledScan(
 		"errors", results.ErrorCount,
 	)
 
-	// Trigger Astro build if enabled and files were successfully processed
-	if cfg.Output.AutoBuild && results.SuccessCount > 0 {
+	// Trigger Astro build if enabled and files were successfully processed,
+	// or if dist/ doesn't exist yet (e.g. container restart with existing MDX files).
+	websiteDir := cfg.Output.WebsiteDir
+	if websiteDir == "" {
+		websiteDir = "./website"
+	}
+	distDir := filepath.Join(websiteDir, "dist")
+	_, distStatErr := os.Stat(distDir)
+	distMissing := os.IsNotExist(distStatErr)
+
+	if cfg.Output.AutoBuild && (results.SuccessCount > 0 || (distMissing && results.TotalFiles > 0)) {
 		slog.Info("triggering astro build after scheduled scan")
 
 		// Sync content to Astro website (needed in Docker)
@@ -100,10 +111,6 @@ func runScheduledScan(
 			// Continue with build anyway - may work with existing files
 		}
 
-		websiteDir := cfg.Output.WebsiteDir
-		if websiteDir == "" {
-			websiteDir = "./website"
-		}
 		if err := buildAstroSite(websiteDir); err != nil {
 			slog.Error("failed to build astro site", "error", err, "website_dir", websiteDir)
 			slog.Info("manual build command", "command", fmt.Sprintf("cd %s && npm run build", websiteDir))

@@ -57,3 +57,4 @@ data/covers/*
 !website/public/covers/.gitkeep
 !data/movies/.gitkeep
 !data/covers/.gitkeep
+configServer
