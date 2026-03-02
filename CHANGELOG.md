@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [1.4.7] - 2026-03-02
+
+### Fixed
+
+- **Silent scan failures for offline directories:** `ScanAll` previously returned a fatal error when any configured directory was inaccessible (e.g. external drive offline — "Host is down"), aborting the entire scan. All remaining directories were skipped and the scheduler logged `files_processed=0, errors=0` — no indication anything went wrong. Directory failures are now non-fatal: a `WARN` is logged and scanning continues with available directories. (`internal/scanner/scanner.go`)
+- **ErrorCount not incremented on early scan abort:** When `ScanAll` returned a fatal error, `runScan` appended to `Errors` but did not increment `ErrorCount`, so the scheduled scan log always showed `errors=0` even on failure. `ErrorCount` is now incremented on that path. (`cmd/scanner/scan.go`)
+- **Website not rebuilt after container restart:** The scheduled scanner only triggered an Astro build when `results.SuccessCount > 0`. On container restart all movies already had MDX files, so `SuccessCount=0` and no build fired — the site served a "scanning…" placeholder indefinitely. The build now also triggers when `dist/` is absent and at least one movie is known (`TotalFiles > 0`), covering the restart case without rebuilding on truly empty libraries. (`cmd/scanner/scheduler.go`)
+
+---
+
 ## [1.4.6] - 2026-02-20
 
 ### Fixed
